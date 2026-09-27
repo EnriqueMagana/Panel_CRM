@@ -28,6 +28,7 @@ class User extends Authenticatable
         'phone_number',
         'password',
         'avatar_seed',
+        'profile_photo_variants',
         'status',
         'theme',
         'sidebar_variant',
@@ -55,6 +56,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'profile_photo_variants' => 'array',
         ];
     }
 
@@ -80,5 +82,26 @@ class User extends Authenticatable
                 $user->avatar_seed = (string) Str::uuid();
             }
         });
+    }
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        return $this->profilePhotoUrl('small');
+    }
+
+    public function profilePhotoUrl(string $size = 'small'): ?string
+    {
+        $path = $this->profile_photo_variants[$size]
+            ?? $this->profile_photo_variants['medium']
+            ?? $this->profile_photo_path;
+
+        if (blank($path)) {
+            return null;
+        }
+
+        return route('media.public', [
+            'path' => $path,
+            'v' => $this->updated_at?->getTimestamp(),
+        ], false);
     }
 }

@@ -32,10 +32,12 @@
                     '(prefers-color-scheme: dark)').matches);
                 const root = document.documentElement;
                 root.classList.toggle('dark', dark);
+                root.style.colorScheme = dark ? 'dark' : 'light';
                 root.classList.toggle('sidebar-collapsed', layout === 'compact');
                 root.dataset.layout = layout;
                 root.dataset.sidebarVariant = sidebarVariant;
                 root.setAttribute('dir', direction);
+                document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#020817' : '#ffffff');
             } catch {}
         })();
     </script>
@@ -45,7 +47,7 @@
 
 <body class="bg-background text-foreground antialiased">
     <div id="global-confirm-modal" aria-hidden="true"
-        class="pointer-events-none fixed inset-0  hidden items-center justify-center bg-black/50 p-4">
+        class="pointer-events-none fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
         <div class="pointer-events-auto w-full max-w-md rounded-xl border border-border bg-background p-5 text-foreground shadow-2xl"
             role="dialog" aria-modal="true" aria-labelledby="global-confirm-title">
             <h2 id="global-confirm-title" class="text-xl font-semibold">Confirmación requerida</h2>
@@ -66,7 +68,7 @@
     <div id="app-shell" class="min-h-dvh lg:grid lg:grid-cols-[256px_minmax(0,1fr)]">
         <aside id="app-sidebar"
             class="sticky top-0 hidden h-dvh border-r border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex lg:flex-col">
-            <a href="{{ route('home') }}"
+            <a href="{{ route('home') }}" wire:navigate.hover
                 class="flex h-16 items-center gap-3 border-b border-sidebar-border px-6 font-semibold">
                 <span class="grid size-9 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground"
                     aria-hidden="true">
@@ -128,7 +130,7 @@
                     <aside
                         class="mobile-sidebar-panel fixed inset-y-0 left-0 z-50 flex w-[min(19rem,calc(100vw-3rem))] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-xl">
                         <div class="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
-                            <a href="{{ route('home') }}" class="flex min-h-11 items-center gap-3 font-semibold">
+                            <a href="{{ route('home') }}" wire:navigate.hover class="flex min-h-11 items-center gap-3 font-semibold">
                                 <span
                                     class="grid size-9 place-items-center rounded-md bg-primary text-primary-foreground"
                                     aria-hidden="true">
@@ -254,10 +256,10 @@
                                     {{ $layoutRoles->isNotEmpty() ? $layoutRoles->join(', ') : 'Sin rol asignado' }}
                                 </p>
                             </div>
-                            <a href="{{ route('profile') }}" data-profile-link
+                            <a href="{{ route('profile') }}" wire:navigate.hover data-profile-link
                                 class="flex min-h-10 items-center justify-between rounded-sm px-3 text-sm hover:bg-accent"><span>Perfil</span><kbd
                                     class="text-[10px] text-muted-foreground">Ctrl+Shift+P</kbd></a>
-                            <a href="{{ route('profile') }}#profile-details"
+                            <a href="{{ route('profile') }}#profile-details" wire:navigate
                                 class="flex min-h-10 items-center rounded-sm px-3 text-sm hover:bg-accent">Perfil</a>
                             <button type="button" data-open-theme-settings
                                 class="flex min-h-10 w-full items-center justify-between rounded-sm px-3 text-left text-sm hover:bg-accent"><span>Configuración</span><kbd
@@ -276,14 +278,17 @@
             </header>
 
             <main class="mx-auto w-full max-w-[1600px] px-4 py-8 sm:px-8 sm:py-10">
-                <div data-module-content class="relative min-h-[18rem]" aria-live="polite">
-                    @yield('content')
+                <div data-module-stage class="relative min-h-[18rem]">
+                    <div data-module-content class="min-h-[18rem]" aria-live="polite" wire:transition.navigate>
+                        @yield('content')
+                    </div>
+                    <x-module-skeleton type="dashboard" />
                 </div>
-                <x-module-skeleton type="dashboard" />
             </main>
         </div>
 
         <x-theme-settings />
+        <livewire:user-preferences />
 
         <dialog data-search-dialog aria-label="Buscar en el panel"
             class="m-auto w-[calc(100%-2rem)] max-w-xl rounded-lg border border-border bg-popover p-0 text-popover-foreground shadow-2xl backdrop:bg-black/40">
@@ -309,42 +314,49 @@
                 aria-label="Resultados de búsqueda">
                 <p class="px-3 py-2 text-xs font-medium text-muted-foreground">Navegación</p>
                 @can('dashboard.view')
-                    <a role="option" data-search-item data-search-value="inicio home dashboard"
+                    <a role="option" wire:navigate.hover data-search-item data-search-value="inicio home dashboard"
                         href="{{ route('home') }}"
                         class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Inicio</span><span
                             class="text-xs text-muted-foreground">General</span></a>
                 @endcan
                 @can('users.view')
-                    <a role="option" data-search-item data-search-value="usuarios users cuentas"
+                    <a role="option" wire:navigate.hover data-search-item data-search-value="usuarios users cuentas"
                         href="{{ route('users') }}"
                         class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Usuarios</span><span
                             class="text-xs text-muted-foreground">Administración</span></a>
                 @endcan
                 @can('roles.view')
-                    <a role="option" data-search-item data-search-value="roles permisos permisos por modulo"
+                    <a role="option" wire:navigate.hover data-search-item data-search-value="roles permisos permisos por modulo"
                         href="{{ route('roles') }}"
                         class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Roles</span><span
                             class="text-xs text-muted-foreground">Administración</span></a>
                 @endcan
                 @can('navigation.view')
-                    <a role="option" data-search-item data-search-value="navegación menú sidebar"
+                    <a role="option" wire:navigate.hover data-search-item data-search-value="navegación menú sidebar"
                         href="{{ route('navigation') }}"
                         class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Navegación</span><span
                             class="text-xs text-muted-foreground">Administración</span></a>
                 @endcan
-                <a role="option" data-search-item data-search-value="chats mensajes inbox conversación"
+                @can('technical_center.view')
+                    <a role="option" wire:navigate.hover data-search-item
+                        data-search-value="centro técnico configuraciones sistema chats historial privacidad"
+                        href="{{ route('technical-center') }}"
+                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Centro técnico</span><span
+                            class="text-xs text-muted-foreground">Administración</span></a>
+                @endcan
+                <a role="option" wire:navigate.hover data-search-item data-search-value="chats mensajes inbox conversación"
                     href="{{ route('chats') }}"
                     class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Chats</span><span
                         class="text-xs text-muted-foreground">General</span></a>
-                <a role="option" data-search-item data-search-value="perfil nombre imagen foto cuenta"
+                <a role="option" wire:navigate data-search-item data-search-value="perfil nombre imagen foto cuenta"
                     href="{{ route('profile') }}#profile-details"
                     class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Perfil</span><span
                         class="text-xs text-muted-foreground">Cuenta</span></a>
-                <a role="option" data-search-item data-search-value="contraseña password clave seguridad"
+                <a role="option" wire:navigate data-search-item data-search-value="contraseña password clave seguridad"
                     href="{{ route('profile') }}#password-heading"
                     class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Contraseña</span><span
                         class="text-xs text-muted-foreground">Cuenta</span></a>
-                <a role="option" data-search-item
+                <a role="option" wire:navigate data-search-item
                     data-search-value="dos pasos 2fa autenticador verificación seguridad"
                     href="{{ route('profile') }}#two-factor-heading"
                     class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Verificación

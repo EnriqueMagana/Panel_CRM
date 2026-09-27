@@ -12,8 +12,15 @@ FilePond.registerPlugin(
 	FilePondPluginImageCrop,
 );
 
-const blobatarSelector = '[data-blobatar-seed]';
+const root = document.documentElement;
+const blobatarSelector = 'img[data-blobatar-seed]';
 const blobatarSvgNamespace = 'http://www.w3.org/2000/svg';
+const blobatarPartsCache = new Map();
+const blobatarUriCache = new Map();
+const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+let confirmAction = null;
+let chatRefreshTimer = null;
+let chatRefreshInFlight = false;
 
 const renderBlobatar = (image) => {
 	const seed = image.dataset.blobatarSeed;
@@ -22,11 +29,20 @@ const renderBlobatar = (image) => {
 
 	if (!seed) return;
 	if (!animation) {
-		image.src = blobatarUri(seed, { size, background: 'circle' });
+		const cacheKey = `${seed}:${size}:static`;
+		if (!blobatarUriCache.has(cacheKey)) {
+			blobatarUriCache.set(cacheKey, blobatarUri(seed, { size, background: 'circle' }));
+		}
+		image.src = blobatarUriCache.get(cacheKey);
+		image.classList.add('is-loaded');
 		return;
 	}
 
-	const parts = blobatarParts(seed, { size, background: 'circle', animate: animation });
+	const cacheKey = `${seed}:${size}:${animation}`;
+	if (!blobatarPartsCache.has(cacheKey)) {
+		blobatarPartsCache.set(cacheKey, blobatarParts(seed, { size, background: 'circle', animate: animation }));
+	}
+	const parts = blobatarPartsCache.get(cacheKey);
 	const svg = document.createElementNS(blobatarSvgNamespace, 'svg');
 	const generatedAttributes = new Set([
 		'alt',
@@ -41,8 +57,9 @@ const renderBlobatar = (image) => {
 
 	svg.setAttribute('xmlns', blobatarSvgNamespace);
 	svg.setAttribute('viewBox', '0 0 100 100');
-	svg.setAttribute('class', `${image.className} ${parts.cls || ''}`.trim());
+	svg.setAttribute('class', (image.className + ' ' + (parts.cls || '') + ' is-loaded').trim());
 	svg.dataset.blobatarMotion = animation;
+	svg.dataset.avatarCacheKey = cacheKey;
 
 	if (image.alt) {
 		svg.setAttribute('role', 'img');
@@ -84,12 +101,19 @@ const renderBlobatars = (node) => {
 	node.querySelectorAll?.(blobatarSelector).forEach(renderBlobatar);
 };
 
+const revealAvatarPhoto = (image) => {
+	if (!(image instanceof HTMLImageElement) || !image.matches('[data-chat-avatar-photo]')) return;
+	if (image.complete && image.naturalWidth > 0) image.classList.add('is-loaded');
+};
+
+const initAvatarPhotos = (node) => {
+	if (node instanceof HTMLImageElement) revealAvatarPhoto(node);
+	node.querySelectorAll?.('[data-chat-avatar-photo]').forEach(revealAvatarPhoto);
+};
+
 const initGlobalFilePond = (node) => {
 	if (!(node instanceof HTMLInputElement) || !node.matches('[data-filepond]')) return;
 	if (node.dataset.filepondInitialized === 'true') return;
-
-	const ratio = node.dataset.cropRatio || '1:1';
-	const acceptedTypes = ['image/png', 'image/jpeg', 'image/webp'];
 
 	FilePond.create(node, {
 		allowMultiple: false,
@@ -99,16 +123,12 @@ const initGlobalFilePond = (node) => {
 		allowPaste: false,
 		credits: false,
 		imagePreviewHeight: 180,
-		imageCropAspectRatio: ratio,
+		imageCropAspectRatio: node.dataset.cropRatio || '1:1',
 		imageCropShape: 'rect',
 		imageCropPermanent: true,
-		acceptedFileTypes: acceptedTypes,
+		acceptedFileTypes: ['image/png', 'image/jpeg', 'image/webp'],
 		labelIdle: 'Arrastra y suelta una imagen o <span class="filepond--label-action">navega</span>',
 		stylePanelLayout: 'compact',
-		styleLoadIndicatorPosition: 'center bottom',
-		styleProgressIndicatorPosition: 'center bottom',
-		styleButtonRemoveItemPosition: 'left bottom',
-		styleButtonProcessItemPosition: 'right bottom',
 		maxFileSize: '2MB',
 	});
 
@@ -120,23 +140,19 @@ const initGlobalFilePondTree = (node) => {
 		initGlobalFilePond(node);
 		return;
 	}
-	if (node instanceof Element) {
-		node.querySelectorAll?.('[data-filepond]').forEach(initGlobalFilePond);
-	}
+	node.querySelectorAll?.('[data-filepond]').forEach(initGlobalFilePond);
 };
 
 const openLivewireModal = (dialog) => {
-	if (!(dialog instanceof HTMLDialogElement) || dialog.open) return;
-
-	const closeButton = dialog.querySelector('[data-modal-close-action]');
-	dialog.addEventListener('cancel', (event) => {
-		event.preventDefault();
-		closeButton?.click();
-	});
-	dialog.addEventListener('click', (event) => {
-		if (event.target === dialog) closeButton?.click();
-	});
-	dialog.showModal();
+	if (!(dialog instanceof HTMLDialogElement)) return;
+	if (dialog.dataset.modalBound !== 'true') {
+		dialog.dataset.modalBound = 'true';
+		dialog.addEventListener('cancel', (event) => {
+			event.preventDefault();
+			dialog.querySelector('[data-modal-close-action]')?.click();
+		});
+	}
+	if (!dialog.open) dialog.showModal();
 };
 
 const openLivewireModals = (node) => {
@@ -144,181 +160,133 @@ const openLivewireModals = (node) => {
 	node.querySelectorAll?.('dialog[data-livewire-modal]').forEach(openLivewireModal);
 };
 
-renderBlobatars(document);
-openLivewireModals(document);
-initGlobalFilePondTree(document);
-
-new MutationObserver((mutations) => {
-	mutations.forEach((mutation) => {
-		if (mutation.type === 'attributes') {
-			renderBlobatar(mutation.target);
-			return;
-		}
-
-		mutation.addedNodes.forEach((node) => {
-			if (node instanceof Element) {
-				renderBlobatars(node);
-				openLivewireModals(node);
-				initGlobalFilePondTree(node);
-			}
-		});
-	});
-}).observe(document.body, {
-	attributes: true,
-	attributeFilter: ['data-blobatar-seed', 'data-blobatar-size', 'data-blobatar-animate'],
-	childList: true,
-	subtree: true,
+const currentPreferences = () => ({
+	theme: localStorage.getItem('snippetdesk-theme') || 'system',
+	layout: root.dataset.layout || 'default',
+	sidebar_variant: root.dataset.sidebarVariant || 'sidebar',
+	direction: root.getAttribute('dir') || 'ltr',
 });
 
-document.querySelectorAll('[data-password-toggle]').forEach((toggle) => {
-	const password = document.getElementById(toggle.getAttribute('aria-controls'));
-	const showIcon = toggle.querySelector('[data-password-icon="show"]');
-	const hideIcon = toggle.querySelector('[data-password-icon="hide"]');
+const persistUserPreferences = () => {
+	window.Livewire?.dispatch('preferences-updated', { preferences: currentPreferences() });
+};
 
-	toggle.addEventListener('click', () => {
-		const shouldShow = password.type === 'password';
+const commitTheme = (theme) => {
+    const dark = theme === 'dark' || (theme === 'system' && systemTheme.matches);
+    root.classList.toggle('dark', dark);
+    root.style.colorScheme = dark ? 'dark' : 'light';
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#020817' : '#ffffff');
+    localStorage.setItem('snippetdesk-theme', theme);
 
-		password.type = shouldShow ? 'text' : 'password';
-		toggle.setAttribute('aria-label', shouldShow ? 'Ocultar contraseña' : 'Mostrar contraseña');
-		toggle.setAttribute('aria-pressed', String(shouldShow));
-		showIcon.classList.toggle('hidden', shouldShow);
-		hideIcon.classList.toggle('hidden', !shouldShow);
+    document.querySelectorAll('[data-theme-value]').forEach((option) => {
+        const selected = option.dataset.themeValue === theme;
+        option.setAttribute('aria-pressed', String(selected));
+        if (option instanceof HTMLInputElement) option.checked = selected;
+        option.querySelectorAll('[data-theme-check]').forEach((check) => {
+            check.classList.toggle('hidden', check.dataset.themeCheck !== theme);
+        });
+    });
+};
+
+const applyTheme = (theme, persist = true, origin = null) => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const canAnimate = persist && origin && document.startViewTransition && !reduceMotion;
+
+    if (canAnimate) {
+        const trigger = origin.currentTarget instanceof Element
+            ? origin.currentTarget
+            : origin.target instanceof Element ? origin.target.closest('[data-theme-value]') : null;
+        const bounds = trigger?.getBoundingClientRect();
+        const x = Number.isFinite(origin.clientX) && origin.clientX > 0
+            ? origin.clientX
+            : (bounds?.left ?? window.innerWidth / 2) + (bounds?.width ?? 0) / 2;
+        const y = Number.isFinite(origin.clientY) && origin.clientY > 0
+            ? origin.clientY
+            : (bounds?.top ?? window.innerHeight / 2) + (bounds?.height ?? 0) / 2;
+        const radius = Math.hypot(
+            Math.max(x, window.innerWidth - x),
+            Math.max(y, window.innerHeight - y),
+        );
+
+        root.style.setProperty('--theme-wave-x', `${x}px`);
+        root.style.setProperty('--theme-wave-y', `${y}px`);
+        root.style.setProperty('--theme-wave-radius', `${radius}px`);
+        document.startViewTransition(() => commitTheme(theme));
+    } else {
+        commitTheme(theme);
+    }
+
+    if (persist) persistUserPreferences();
+};
+
+const updateSidebarButton = () => {
+	const button = document.querySelector('[data-sidebar-toggle]');
+	if (!button) return;
+	const expanded = root.dataset.layout === 'default';
+	const label = expanded ? 'Contraer barra lateral' : 'Mostrar barra lateral';
+	button.setAttribute('aria-expanded', String(expanded));
+	button.setAttribute('aria-label', label);
+	button.setAttribute('title', label);
+};
+
+const applyLayout = (layout, persist = true) => {
+	root.dataset.layout = layout;
+	root.classList.toggle('sidebar-collapsed', layout === 'compact');
+	localStorage.setItem('snippetdesk-layout', layout);
+	localStorage.setItem('snippetdesk-sidebar', layout === 'compact' ? 'collapsed' : 'expanded');
+	updateSidebarButton();
+	if (persist) persistUserPreferences();
+};
+
+const applySidebarVariant = (variant, persist = true) => {
+	root.dataset.sidebarVariant = variant;
+	localStorage.setItem('snippetdesk-sidebar-variant', variant);
+	if (persist) persistUserPreferences();
+};
+
+const applyDirection = (direction, persist = true) => {
+	root.setAttribute('dir', direction);
+	localStorage.setItem('snippetdesk-direction', direction);
+	if (persist) persistUserPreferences();
+};
+
+const syncPreferenceRadios = () => {
+	const values = {
+		'[data-sidebar-value]': root.dataset.sidebarVariant || 'sidebar',
+		'[data-layout-value]': root.dataset.layout || 'default',
+		'[data-direction-value]': root.getAttribute('dir') || 'ltr',
+	};
+
+	Object.entries(values).forEach(([selector, current]) => {
+		document.querySelectorAll(selector).forEach((option) => {
+			option.checked = option.value === current;
+		});
 	});
-});
-
-const root = document.documentElement;
-const sidebarToggle = document.querySelector('[data-sidebar-toggle]');
-const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-
-const initChatControls = () => {
-	const shell = document.querySelector('[data-chat-shell]');
-	const toggle = document.getElementById('chat-create-group-toggle');
-	const form = document.getElementById('chat-group-form-wrapper');
-	const searchInput = document.getElementById('chat-search-input');
-	const backButton = document.querySelector('[data-chat-back]');
-	const listItems = Array.from(document.querySelectorAll('[data-chat-item]'));
-
-	if (toggle && form && !toggle.dataset.chatBound) {
-		toggle.dataset.chatBound = 'true';
-		toggle.addEventListener('click', () => {
-			form.classList.toggle('hidden');
-		});
-	}
-
-	if (backButton && shell && !backButton.dataset.chatBound) {
-		backButton.dataset.chatBound = 'true';
-		backButton.addEventListener('click', () => {
-			shell.dataset.mobileView = 'list';
-		});
-	}
-
-	if (searchInput && !searchInput.dataset.chatBound) {
-		searchInput.dataset.chatBound = 'true';
-		searchInput.addEventListener('input', (event) => {
-			const term = (event.target.value || '').toLowerCase().trim();
-			listItems.forEach((item) => {
-				const name = (item.dataset.chatName || '').toLowerCase();
-				const text = (item.dataset.chatText || '').toLowerCase();
-				const visible = !term || name.includes(term) || text.includes(term);
-				item.classList.toggle('hidden', !visible);
-			});
-		});
-	}
-
-	if (shell && !shell.dataset.chatBound) {
-		shell.dataset.chatBound = 'true';
-		listItems.forEach((item) => {
-			item.addEventListener('click', () => {
-				if (window.innerWidth < 1024) {
-					shell.dataset.mobileView = 'chat';
-				}
-			});
-		});
-	}
 };
-
-initChatControls();
-
-const persistUserPreferences = async (preferences) => {
-	if (!csrfToken) return;
-
-	try {
-		await fetch('/settings/preferences', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'X-CSRF-TOKEN': csrfToken,
-				'Accept': 'application/json',
-			},
-			body: JSON.stringify(preferences),
-		});
-	} catch (error) {
-		console.warn('No se pudieron guardar las preferencias del usuario.', error);
-	}
-};
-
-const confirmModal = document.getElementById('global-confirm-modal');
-const confirmMessage = document.querySelector('[data-confirm-message]');
-const confirmCancel = document.querySelector('[data-confirm-cancel]');
-const confirmAccept = document.querySelector('[data-confirm-accept]');
-let confirmAction = null;
 
 const showConfirmModal = (message, callback) => {
-	if (!confirmModal || !confirmMessage || !confirmAccept) return;
-	confirmMessage.textContent = message;
-	confirmModal.classList.remove('hidden');
-	confirmModal.classList.add('flex');
-	confirmModal.setAttribute('aria-hidden', 'false');
+	const modal = document.getElementById('global-confirm-modal');
+	const copy = modal?.querySelector('[data-confirm-message]');
+	if (!modal || !copy) return;
+
+	copy.textContent = message;
+	modal.classList.remove('hidden');
+	modal.classList.add('flex');
+	modal.setAttribute('aria-hidden', 'false');
 	confirmAction = callback;
 };
 
 const hideConfirmModal = () => {
-	if (!confirmModal) return;
-	confirmModal.classList.add('hidden');
-	confirmModal.classList.remove('flex');
-	confirmModal.setAttribute('aria-hidden', 'true');
+	const modal = document.getElementById('global-confirm-modal');
+	if (!modal) return;
+	modal.classList.add('hidden');
+	modal.classList.remove('flex');
+	modal.setAttribute('aria-hidden', 'true');
 	confirmAction = null;
 };
 
-document.addEventListener('click', (event) => {
-	const trigger = event.target.closest('[data-confirm-action]');
-	if (!trigger) return;
-
-	if (trigger.dataset.confirmPending === 'true') {
-		trigger.dataset.confirmPending = 'false';
-		return;
-	}
-
-	event.preventDefault();
-	const message = trigger.dataset.confirmMessage || '¿Estás seguro de continuar?';
-	showConfirmModal(message, () => {
-		trigger.dataset.confirmPending = 'true';
-		trigger.click();
-		trigger.dataset.confirmPending = 'false';
-		hideConfirmModal();
-	});
-});
-
-confirmAccept?.addEventListener('click', () => {
-	if (typeof confirmAction === 'function') {
-		confirmAction();
-	}
-});
-
-confirmCancel?.addEventListener('click', hideConfirmModal);
-confirmModal?.addEventListener('click', (event) => {
-	if (event.target === confirmModal) hideConfirmModal();
-});
-
-document.addEventListener('keydown', (event) => {
-	if (event.key === 'Escape' && confirmModal && !confirmModal.classList.contains('hidden')) {
-		hideConfirmModal();
-	}
-});
-
 const positionFloatingMenu = (details, panel) => {
-	if (!details || !panel || !details.open) return;
-
+	if (!details.open) return;
 	const trigger = details.querySelector('summary');
 	if (!trigger) return;
 
@@ -328,55 +296,306 @@ const positionFloatingMenu = (details, panel) => {
 	const top = Math.min(window.innerHeight - panelRect.height - 12, triggerRect.bottom + 8);
 
 	panel.style.position = 'fixed';
-	panel.style.left = `${Math.max(12, left)}px`;
-	panel.style.top = `${Math.max(12, top)}px`;
+	panel.style.left = Math.max(12, left) + 'px';
+	panel.style.top = Math.max(12, top) + 'px';
 	panel.style.zIndex = '60';
 };
 
-document.querySelectorAll('[data-floating-menu]').forEach((details) => {
-	const panel = details.querySelector('[data-floating-panel]');
-	if (!panel) return;
+const initFloatingMenus = () => {
+	document.querySelectorAll('[data-floating-menu]').forEach((details) => {
+		if (details.dataset.floatingBound === 'true') return;
+		const panel = details.querySelector('[data-floating-panel]');
+		if (!panel) return;
 
-	const syncPosition = () => positionFloatingMenu(details, panel);
-	details.addEventListener('toggle', syncPosition);
-	details.querySelector('summary')?.addEventListener('click', () => requestAnimationFrame(syncPosition));
-	window.addEventListener('resize', syncPosition);
-	window.addEventListener('scroll', syncPosition, true);
+		details.dataset.floatingBound = 'true';
+		const syncPosition = () => positionFloatingMenu(details, panel);
+		details.addEventListener('toggle', syncPosition);
+		details.querySelector('summary')?.addEventListener('click', () => requestAnimationFrame(syncPosition));
+		window.addEventListener('resize', syncPosition);
+		window.addEventListener('scroll', syncPosition, true);
+	});
+};
+
+const moduleTypeForUrl = (value) => {
+	const pathname = new URL(value, window.location.origin).pathname;
+	if (pathname.startsWith('/chats')) return 'chat';
+	if (pathname.startsWith('/users')) return 'table';
+	if (pathname.startsWith('/profile')) return 'profile';
+	if (pathname.startsWith('/roles') || pathname.startsWith('/navigation')) return 'list';
+	return 'dashboard';
+};
+
+const setNavigationSkeleton = (loading, targetUrl = window.location.href) => {
+	const content = document.querySelector('[data-module-content]');
+	const loader = document.querySelector('[data-module-loader]');
+	if (!content || !loader) return;
+
+	content.setAttribute('aria-busy', String(loading));
+	content.classList.toggle('opacity-30', loading);
+	content.classList.toggle('pointer-events-none', loading);
+	loader.dataset.moduleSkeleton = moduleTypeForUrl(targetUrl);
+	loader.classList.toggle('hidden', !loading);
+	loader.hidden = !loading;
+};
+
+const scrollChatToBottom = () => {
+	requestAnimationFrame(() => {
+		const list = document.querySelector('[data-chat-message-list]');
+		list?.scrollTo({ top: list.scrollHeight, behavior: 'auto' });
+		const composer = document.querySelector('[data-chat-composer-input]');
+		if (composer) {
+			composer.style.height = 'auto';
+			composer.style.height = Math.min(composer.scrollHeight, 112) + 'px';
+		}
+	});
+};
+
+const scheduleChatRefresh = () => {
+	if (chatRefreshTimer) window.clearTimeout(chatRefreshTimer);
+
+	const workspace = document.querySelector('[data-chat-workspace][wire\\:id]');
+	if (!workspace) {
+		chatRefreshTimer = null;
+		return;
+	}
+
+	chatRefreshTimer = window.setTimeout(async () => {
+		if (document.hidden || chatRefreshInFlight) {
+			scheduleChatRefresh();
+			return;
+		}
+
+		const wire = window.Livewire?.find(workspace.getAttribute('wire:id'));
+		if (typeof wire?.$call !== 'function') {
+			scheduleChatRefresh();
+			return;
+		}
+
+		chatRefreshInFlight = true;
+		try {
+			await wire.$call('refreshConversation');
+		} finally {
+			chatRefreshInFlight = false;
+			scheduleChatRefresh();
+		}
+	}, 8_000);
+};
+
+const initPage = () => {
+	renderBlobatars(document);
+	initAvatarPhotos(document);
+	openLivewireModals(document);
+	initGlobalFilePondTree(document);
+	initFloatingMenus();
+	applyTheme(localStorage.getItem('snippetdesk-theme') || 'system', false);
+	applyLayout(localStorage.getItem('snippetdesk-layout') || root.dataset.layout || 'default', false);
+	applySidebarVariant(localStorage.getItem('snippetdesk-sidebar-variant') || root.dataset.sidebarVariant || 'sidebar', false);
+	applyDirection(localStorage.getItem('snippetdesk-direction') || root.getAttribute('dir') || 'ltr', false);
+	syncPreferenceRadios();
+	updateSidebarButton();
+	scrollChatToBottom();
+	scheduleChatRefresh();
+};
+
+document.addEventListener('click', (event) => {
+	const target = event.target instanceof Element ? event.target : null;
+	if (!target) return;
+	if (target.closest('[data-chat-workspace]')) scheduleChatRefresh();
+
+	const sidebarButton = target.closest('[data-sidebar-toggle]');
+	if (sidebarButton) {
+		applyLayout(root.dataset.layout === 'default' ? 'compact' : 'default');
+		return;
+	}
+
+    const themeOption = target.closest('[data-theme-value]');
+    if (themeOption) {
+        applyTheme(themeOption.dataset.themeValue, true, event);
+        return;
+    }
+
+	const passwordToggle = target.closest('[data-password-toggle]');
+	if (passwordToggle) {
+		const password = document.getElementById(passwordToggle.getAttribute('aria-controls'));
+		if (!(password instanceof HTMLInputElement)) return;
+		const shouldShow = password.type === 'password';
+		password.type = shouldShow ? 'text' : 'password';
+		passwordToggle.setAttribute('aria-label', shouldShow ? 'Ocultar contraseña' : 'Mostrar contraseña');
+		passwordToggle.setAttribute('aria-pressed', String(shouldShow));
+		passwordToggle.querySelector('[data-password-icon="show"]')?.classList.toggle('hidden', shouldShow);
+		passwordToggle.querySelector('[data-password-icon="hide"]')?.classList.toggle('hidden', !shouldShow);
+		return;
+	}
+
+	if (target.closest('[data-close-mobile-sidebar]')) {
+		target.closest('.mobile-sidebar-root')?.removeAttribute('open');
+		return;
+	}
+
+	if (target.closest('[data-open-theme-settings]')) {
+		target.closest('details')?.removeAttribute('open');
+		const dialog = document.querySelector('[data-theme-settings]');
+		if (dialog instanceof HTMLDialogElement && !dialog.open) dialog.showModal();
+		return;
+	}
+
+	if (target.closest('[data-close-theme-settings]')) {
+		document.querySelector('[data-theme-settings]')?.close();
+		return;
+	}
+
+	if (target.closest('[data-search-trigger]')) {
+		document.querySelector('.mobile-sidebar-root')?.removeAttribute('open');
+		const dialog = document.querySelector('[data-search-dialog]');
+		if (dialog instanceof HTMLDialogElement && !dialog.open) dialog.showModal();
+		dialog?.querySelector('[data-search-input]')?.focus();
+		return;
+	}
+
+	if (target.closest('[data-close-search]')) {
+		document.querySelector('[data-search-dialog]')?.close();
+		return;
+	}
+
+	if (target.closest('[data-reset-theme]')) {
+		applyTheme('system');
+		return;
+	}
+	if (target.closest('[data-reset-sidebar]')) {
+		applySidebarVariant('sidebar');
+		syncPreferenceRadios();
+		return;
+	}
+	if (target.closest('[data-reset-layout]')) {
+		applyLayout('default');
+		syncPreferenceRadios();
+		return;
+	}
+	if (target.closest('[data-reset-direction]')) {
+		applyDirection('ltr');
+		syncPreferenceRadios();
+		return;
+	}
+	if (target.closest('[data-reset-all-settings]')) {
+		applyTheme('system', false);
+		applySidebarVariant('sidebar', false);
+		applyLayout('default', false);
+		applyDirection('ltr', false);
+		syncPreferenceRadios();
+		persistUserPreferences();
+		return;
+	}
+
+	const confirmTrigger = target.closest('[data-confirm-action]');
+	if (confirmTrigger) {
+		if (confirmTrigger.dataset.confirmPending === 'true') {
+			confirmTrigger.dataset.confirmPending = 'false';
+			return;
+		}
+		event.preventDefault();
+		showConfirmModal(confirmTrigger.dataset.confirmMessage || '¿Estás seguro de continuar?', () => {
+			confirmTrigger.dataset.confirmPending = 'true';
+			confirmTrigger.click();
+			confirmTrigger.dataset.confirmPending = 'false';
+			hideConfirmModal();
+		});
+		return;
+	}
+
+	if (target.closest('[data-confirm-accept]')) {
+		if (typeof confirmAction === 'function') confirmAction();
+		return;
+	}
+	if (target.closest('[data-confirm-cancel]')) {
+		hideConfirmModal();
+		return;
+	}
+
+	const modal = target.closest('dialog');
+	if (modal && event.target === modal) {
+		if (modal.matches('[data-theme-settings], [data-search-dialog]')) modal.close();
+		else modal.querySelector('[data-modal-close-action]')?.click();
+	}
 });
 
-const updateSidebarButton = () => {
-	if (!sidebarToggle) return;
-	const expanded = root.dataset.layout === 'default';
-	const label = expanded ? 'Contraer barra lateral' : 'Mostrar barra lateral';
-	sidebarToggle.setAttribute('aria-expanded', String(expanded));
-	sidebarToggle.setAttribute('aria-label', label);
-	sidebarToggle.setAttribute('title', label);
-};
+document.addEventListener('input', (event) => {
+	if (event.target instanceof Element && event.target.closest('[data-chat-workspace]')) {
+		scheduleChatRefresh();
+	}
+});
 
-const applyLayout = (layout) => {
-	root.dataset.layout = layout;
-	root.classList.toggle('sidebar-collapsed', layout === 'compact');
-	localStorage.setItem('snippetdesk-layout', layout);
-	localStorage.setItem('snippetdesk-sidebar', layout === 'compact' ? 'collapsed' : 'expanded');
-	updateSidebarButton();
-	persistUserPreferences({ layout, sidebar_variant: root.dataset.sidebarVariant || 'sidebar', direction: root.getAttribute('dir') || 'ltr', theme: localStorage.getItem('snippetdesk-theme') || 'system' });
-};
+document.addEventListener('change', (event) => {
+	const target = event.target;
+	if (!(target instanceof HTMLInputElement) || !target.checked) return;
 
-const applySidebarVariant = (variant) => {
-	root.dataset.sidebarVariant = variant;
-	localStorage.setItem('snippetdesk-sidebar-variant', variant);
-	persistUserPreferences({ layout: root.dataset.layout || 'default', sidebar_variant: variant, direction: root.getAttribute('dir') || 'ltr', theme: localStorage.getItem('snippetdesk-theme') || 'system' });
-};
+	if (target.matches('[data-sidebar-value]')) applySidebarVariant(target.value);
+	if (target.matches('[data-layout-value]')) applyLayout(target.value);
+	if (target.matches('[data-direction-value]')) applyDirection(target.value);
+});
 
-const applyDirection = (direction) => {
-	root.setAttribute('dir', direction);
-	localStorage.setItem('snippetdesk-direction', direction);
-	persistUserPreferences({ layout: root.dataset.layout || 'default', sidebar_variant: root.dataset.sidebarVariant || 'sidebar', direction, theme: localStorage.getItem('snippetdesk-theme') || 'system' });
-};
+document.addEventListener('input', (event) => {
+	const target = event.target;
+	if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
 
-updateSidebarButton();
-sidebarToggle?.addEventListener('click', () => {
-	applyLayout(root.dataset.layout === 'default' ? 'compact' : 'default');
+	if (target.matches('[data-search-input]')) {
+		const dialog = target.closest('[data-search-dialog]');
+		const query = target.value.trim().toLocaleLowerCase();
+		let visibleResults = 0;
+
+		dialog?.querySelectorAll('[data-search-item]').forEach((item) => {
+			const searchText = (item.textContent + ' ' + (item.dataset.searchValue || '')).toLocaleLowerCase();
+			const matches = !query || searchText.includes(query);
+			item.classList.toggle('hidden', !matches);
+			visibleResults += Number(matches);
+		});
+		dialog?.querySelector('[data-search-empty]')?.classList.toggle('hidden', visibleResults > 0);
+	}
+
+	if (target.matches('[data-chat-composer-input]')) {
+		target.style.height = 'auto';
+		target.style.height = Math.min(target.scrollHeight, 112) + 'px';
+	}
+});
+
+document.addEventListener('keydown', (event) => {
+	if (event.key === 'Escape') {
+		document.querySelector('.mobile-sidebar-root')?.removeAttribute('open');
+		hideConfirmModal();
+	}
+
+	if (event.target instanceof HTMLTextAreaElement
+		&& event.target.matches('[data-chat-composer-input]')
+		&& event.key === 'Enter'
+		&& !event.shiftKey
+		&& !event.isComposing) {
+		event.preventDefault();
+		event.target.closest('form')?.requestSubmit();
+		return;
+	}
+
+	if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+		event.preventDefault();
+		const dialog = document.querySelector('[data-search-dialog]');
+		if (dialog instanceof HTMLDialogElement && !dialog.open) dialog.showModal();
+		dialog?.querySelector('[data-search-input]')?.focus();
+		return;
+	}
+
+	if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
+	if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+
+	const key = event.key.toLowerCase();
+	if (key === 'p') {
+		event.preventDefault();
+		window.Livewire?.navigate(document.querySelector('[data-profile-link]')?.href || '/profile');
+	} else if (key === 's') {
+		event.preventDefault();
+		const dialog = document.querySelector('[data-theme-settings]');
+		if (dialog instanceof HTMLDialogElement && !dialog.open) dialog.showModal();
+	} else if (key === 'q') {
+		event.preventDefault();
+		document.querySelector('[data-logout-form]')?.requestSubmit();
+	}
 });
 
 window.addEventListener('profile-avatar-updated', (event) => {
@@ -392,10 +611,7 @@ window.addEventListener('profile-avatar-updated', (event) => {
 			image.removeAttribute('data-blobatar-seed');
 			image.removeAttribute('data-blobatar-size');
 			image.src = profilePhotoUrl;
-			return;
-		}
-
-		if (avatarSeed) {
+		} else if (avatarSeed) {
 			const size = Number(image.dataset.blobatarSize || image.getAttribute('width')) || 40;
 			image.dataset.blobatarSeed = avatarSeed;
 			image.dataset.blobatarSize = String(size);
@@ -409,275 +625,60 @@ window.addEventListener('profile-avatar-updated', (event) => {
 	});
 });
 
-document.querySelectorAll('[data-close-mobile-sidebar]').forEach((button) => {
-	button.addEventListener('click', () => {
-		button.closest('.mobile-sidebar-root')?.removeAttribute('open');
-	});
+window.addEventListener('chat-scroll-bottom', scrollChatToBottom);
+window.addEventListener('chat-focus-composer', () => {
+	requestAnimationFrame(() => document.querySelector('[data-chat-composer-input]')?.focus());
 });
 
-const themeOptions = document.querySelectorAll('[data-theme-value]');
-const themeColor = document.querySelector('meta[name="theme-color"]');
-const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
-
-const applyTheme = (theme) => {
-	const dark = theme === 'dark' || (theme === 'system' && systemTheme.matches);
-	root.classList.toggle('dark', dark);
-	if (themeColor) themeColor.setAttribute('content', dark ? '#020817' : '#ffffff');
-
-	themeOptions.forEach((option) => {
-		const selected = option.dataset.themeValue === theme;
-		option.setAttribute('aria-pressed', String(selected));
-		if (option instanceof HTMLInputElement) option.checked = selected;
-		option.querySelectorAll('[data-theme-check]').forEach((check) => {
-			check.classList.toggle('hidden', check.dataset.themeCheck !== theme);
-		});
-	});
-};
-
-applyTheme(localStorage.getItem('snippetdesk-theme') || 'system');
-
-themeOptions.forEach((option) => {
-	option.addEventListener('click', () => {
-		const theme = option.dataset.themeValue;
-		localStorage.setItem('snippetdesk-theme', theme);
-		applyTheme(theme);
-		persistUserPreferences({
-			theme,
-			layout: root.dataset.layout || 'default',
-			sidebar_variant: root.dataset.sidebarVariant || 'sidebar',
-			direction: root.getAttribute('dir') || 'ltr',
-		});
-	});
-});
-
-const sidebarOptions = document.querySelectorAll('[data-sidebar-value]');
-const layoutOptions = document.querySelectorAll('[data-layout-value]');
-const directionOptions = document.querySelectorAll('[data-direction-value]');
-const settingsDialog = document.querySelector('[data-theme-settings]');
-
-const syncPreferenceRadios = () => {
-	[
-		[sidebarOptions, root.dataset.sidebarVariant || 'sidebar'],
-		[layoutOptions, root.dataset.layout || 'default'],
-		[directionOptions, root.getAttribute('dir') || 'ltr'],
-	].forEach(([options, current]) => {
-		options.forEach((option) => {
-			option.checked = option.value === current;
-		});
-	});
-};
-
-syncPreferenceRadios();
-sidebarOptions.forEach((option) => option.addEventListener('change', () => {
-	if (option.checked) applySidebarVariant(option.value);
-}));
-layoutOptions.forEach((option) => option.addEventListener('change', () => {
-	if (option.checked) applyLayout(option.value);
-}));
-directionOptions.forEach((option) => option.addEventListener('change', () => {
-	if (option.checked) applyDirection(option.value);
-}));
-
-const resetTheme = () => {
-	localStorage.removeItem('snippetdesk-theme');
-	applyTheme('system');
-	persistUserPreferences({
-		theme: 'system',
-		layout: root.dataset.layout || 'default',
-		sidebar_variant: root.dataset.sidebarVariant || 'sidebar',
-		direction: root.getAttribute('dir') || 'ltr',
-	});
-};
-
-document.querySelector('[data-reset-theme]')?.addEventListener('click', resetTheme);
-document.querySelector('[data-reset-sidebar]')?.addEventListener('click', () => applySidebarVariant('sidebar'));
-document.querySelector('[data-reset-layout]')?.addEventListener('click', () => applyLayout('default'));
-document.querySelector('[data-reset-direction]')?.addEventListener('click', () => applyDirection('ltr'));
-document.querySelector('[data-reset-all-settings]')?.addEventListener('click', () => {
-	resetTheme();
-	applySidebarVariant('sidebar');
-	applyLayout('default');
-	applyDirection('ltr');
-	syncPreferenceRadios();
-});
-
-document.querySelectorAll('[data-open-theme-settings]').forEach((button) => {
-	button.addEventListener('click', () => {
-		button.closest('details')?.removeAttribute('open');
-		if (settingsDialog instanceof HTMLDialogElement && !settingsDialog.open) settingsDialog.showModal();
-	});
-});
-
-if (settingsDialog instanceof HTMLDialogElement) {
-	settingsDialog.querySelector('[data-close-theme-settings]')?.addEventListener('click', () => settingsDialog.close());
-	settingsDialog.addEventListener('click', (event) => {
-		if (event.target === settingsDialog) settingsDialog.close();
-	});
-}
-
-document.addEventListener('keydown', (event) => {
-	if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
-	if (event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
-
-	const key = event.key.toLowerCase();
-	if (key === 'p') {
-		event.preventDefault();
-		window.location.assign(document.querySelector('[data-profile-link]')?.href || '/profile');
-	} else if (key === 's') {
-		event.preventDefault();
-		if (settingsDialog instanceof HTMLDialogElement && !settingsDialog.open) settingsDialog.showModal();
-	} else if (key === 'q') {
-		event.preventDefault();
-		document.querySelector('[data-logout-form]')?.requestSubmit();
+document.addEventListener('error', (event) => {
+	const image = event.target;
+	if (image instanceof HTMLImageElement && image.matches('[data-chat-avatar-photo]')) {
+		image.hidden = true;
 	}
+}, true);
+
+document.addEventListener('load', (event) => {
+	const image = event.target;
+	if (image instanceof HTMLImageElement && image.matches('[data-chat-avatar-photo]')) {
+		image.hidden = false;
+		image.classList.add('is-loaded');
+	}
+}, true);
+
+systemTheme.addEventListener('change', () => {
+	if ((localStorage.getItem('snippetdesk-theme') || 'system') === 'system') applyTheme('system', false);
 });
 
-let currentModuleContent = document.querySelector('[data-module-content]');
-let currentModuleLoader = document.querySelector('[data-module-loader]');
+document.addEventListener('livewire:navigate', (event) => {
+	setNavigationSkeleton(true, event.detail.url);
+});
 
-const setModuleLoading = (loading) => {
-	if (!currentModuleContent || !currentModuleLoader) return;
-	currentModuleContent.setAttribute('aria-busy', loading ? 'true' : 'false');
-	currentModuleContent.classList.toggle('opacity-50', loading);
-	currentModuleContent.classList.toggle('pointer-events-none', loading);
+document.addEventListener('livewire:navigated', () => {
+	setNavigationSkeleton(false);
+	initPage();
+});
 
-	const moduleType = currentModuleContent?.dataset?.moduleType || 'dashboard';
-	currentModuleLoader.dataset.moduleSkeleton = moduleType;
-	currentModuleLoader.querySelectorAll('.module-skeleton-variant').forEach((variant) => {
-		const visible = variant.classList.contains(`module-skeleton-${moduleType}`);
-		variant.style.display = visible ? 'block' : 'none';
-	});
-	currentModuleLoader.classList.toggle('hidden', !loading);
-	currentModuleLoader.hidden = !loading;
-};
+new MutationObserver((mutations) => {
+	mutations.forEach((mutation) => {
+		if (mutation.type === 'attributes') {
+			renderBlobatar(mutation.target);
+			return;
+		}
 
-const setModuleActiveState = (path) => {
-	const normalized = path.split('#')[0] || '/';
-	document.querySelectorAll('[data-module-link], .sidebar-link, [data-profile-link], [data-search-item]').forEach((link) => {
-		const href = link.getAttribute('href');
-		if (!href) return;
-		const linkPath = new URL(href, window.location.origin).pathname;
-		const active = linkPath === normalized;
-		link.classList.toggle('bg-sidebar-accent', active && link.classList.contains('sidebar-link'));
-		link.classList.toggle('text-sidebar-accent-foreground', active && link.classList.contains('sidebar-link'));
-		link.setAttribute('aria-current', active ? 'page' : 'false');
-	});
-};
-
-const loadModuleContent = async (url, shouldPushState = true) => {
-	const target = new URL(url, window.location.origin);
-	if (target.origin !== window.location.origin) return false;
-	if (target.pathname === window.location.pathname && target.search === window.location.search && !target.hash) {
-		return false;
-	}
-
-	setModuleLoading(true);
-
-	try {
-		const response = await fetch(target.href, {
-			headers: {
-				'X-Requested-With': 'XMLHttpRequest',
-			},
+		mutation.addedNodes.forEach((node) => {
+			if (node instanceof Element) {
+				renderBlobatars(node);
+				initAvatarPhotos(node);
+				openLivewireModals(node);
+				initGlobalFilePondTree(node);
+			}
 		});
-		if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-		const html = await response.text();
-		const parser = new DOMParser();
-		const doc = parser.parseFromString(html, 'text/html');
-		const nextContent = doc.querySelector('[data-module-content]');
-		if (!nextContent) throw new Error('The response does not include a module container.');
-
-		const nextTitle = doc.querySelector('title')?.textContent || document.title;
-		if (currentModuleContent && currentModuleContent.parentNode) {
-			currentModuleContent.replaceWith(nextContent);
-		}
-		currentModuleContent = document.querySelector('[data-module-content]');
-		currentModuleLoader = document.querySelector('[data-module-loader]');
-		document.title = nextTitle;
-		setModuleLoading(false);
-		setModuleActiveState(target.pathname);
-		if (shouldPushState) {
-			history.pushState({ moduleUrl: target.href }, '', target.href);
-		}
-		if (target.hash) {
-			requestAnimationFrame(() => {
-				const targetElement = document.getElementById(target.hash.slice(1));
-				targetElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-			});
-		}
-		return true;
-	} catch (error) {
-		console.warn('No se pudo cargar el módulo.', error);
-		window.location.assign(target.href);
-		return false;
-	}
-};
-
-document.addEventListener('click', (event) => {
-	const link = event.target.closest('a[href]');
-	if (!link) return;
-
-	const href = link.getAttribute('href');
-	if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
-	if (link.target === '_blank' || link.hasAttribute('download')) return;
-	if (link.hasAttribute('data-no-module-load') || link.closest('[data-no-module-load]')) return;
-
-	const url = new URL(href, window.location.origin);
-	if (url.origin !== window.location.origin) return;
-	if (url.pathname.startsWith('/chats')) return;
-	if (link.closest('[data-search-dialog]') || link.closest('dialog')) {
-		return;
-	}
-
-	event.preventDefault();
-	loadModuleContent(url.href, true);
+	});
+}).observe(document.body, {
+	attributes: true,
+	attributeFilter: ['data-blobatar-seed', 'data-blobatar-size', 'data-blobatar-animate'],
+	childList: true,
+	subtree: true,
 });
 
-window.addEventListener('popstate', () => {
-	loadModuleContent(window.location.href, false);
-});
-
-const searchDialog = document.querySelector('[data-search-dialog]');
-const searchInput = document.querySelector('[data-search-input]');
-
-if (searchDialog instanceof HTMLDialogElement) {
-	const openSearch = () => {
-		document.querySelector('.mobile-sidebar-root')?.removeAttribute('open');
-		if (!searchDialog.open) searchDialog.showModal();
-		searchInput?.focus();
-	};
-
-	document.querySelectorAll('[data-search-trigger]').forEach((button) => {
-		button.addEventListener('click', openSearch);
-	});
-
-	searchDialog.querySelector('[data-close-search]')?.addEventListener('click', () => searchDialog.close());
-	searchDialog.addEventListener('click', (event) => {
-		if (event.target === searchDialog) searchDialog.close();
-	});
-
-	searchInput?.addEventListener('input', () => {
-		const query = searchInput.value.trim().toLocaleLowerCase();
-		let visibleResults = 0;
-
-		searchDialog.querySelectorAll('[data-search-item]').forEach((item) => {
-			const searchText = `${item.textContent} ${item.dataset.searchValue || ''}`.toLocaleLowerCase();
-			const matches = !query || searchText.includes(query);
-			item.classList.toggle('hidden', !matches);
-			visibleResults += Number(matches);
-		});
-
-		searchDialog.querySelector('[data-search-empty]')?.classList.toggle('hidden', visibleResults > 0);
-	});
-
-	document.addEventListener('keydown', (event) => {
-		if (event.key.toLowerCase() === 'k' && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
-			openSearch();
-		}
-	});
-}
-
-document.addEventListener('keydown', (event) => {
-	if (event.key === 'Escape') document.querySelector('.mobile-sidebar-root')?.removeAttribute('open');
-});
+initPage();

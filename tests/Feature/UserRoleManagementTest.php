@@ -30,6 +30,7 @@ class UserRoleManagementTest extends TestCase
         $this->get('/users')->assertForbidden();
         $this->get('/roles')->assertForbidden();
         $this->get('/navigation')->assertForbidden();
+        $this->get('/technical-center')->assertForbidden();
     }
 
     public function test_sidebar_seeder_creates_ordered_parent_and_child_items(): void
@@ -43,6 +44,12 @@ class UserRoleManagementTest extends TestCase
             'parent_id' => $administration->id,
             'permission_name' => 'users.view',
             'sort_order' => 10,
+        ]);
+        $this->assertDatabaseHas('sidebar_items', [
+            'label' => 'Centro técnico',
+            'parent_id' => $administration->id,
+            'permission_name' => 'technical_center.view',
+            'sort_order' => 40,
         ]);
     }
 

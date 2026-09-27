@@ -15,6 +15,7 @@ class SidebarItemSeeder extends Seeder
             ['key' => 'users', 'parent' => 'administration', 'type' => 'link', 'label' => 'Usuarios', 'icon' => 'users', 'route_name' => 'users', 'permission_name' => 'users.view', 'sort_order' => 10],
             ['key' => 'roles', 'parent' => 'administration', 'type' => 'link', 'label' => 'Roles', 'icon' => 'shield', 'route_name' => 'roles', 'permission_name' => 'roles.view', 'sort_order' => 20],
             ['key' => 'navigation', 'parent' => 'administration', 'type' => 'link', 'label' => 'Navegación', 'icon' => 'menu', 'route_name' => 'navigation', 'permission_name' => 'navigation.view', 'sort_order' => 30],
+            ['key' => 'technical-center', 'parent' => 'administration', 'type' => 'link', 'label' => 'Centro técnico', 'icon' => 'settings', 'route_name' => 'technical-center', 'permission_name' => 'technical_center.view', 'sort_order' => 40],
             ['key' => 'chat', 'parent' => null, 'type' => 'link', 'label' => 'Chats', 'icon' => 'chat', 'route_name' => 'chats', 'sort_order' => 25],
             ['key' => 'account', 'parent' => null, 'type' => 'group', 'label' => 'Cuenta', 'icon' => 'user', 'sort_order' => 30],
             ['key' => 'profile-details', 'parent' => 'account', 'type' => 'link', 'label' => 'Perfil', 'icon' => 'user', 'route_name' => 'profile', 'route_fragment' => 'profile-details', 'active_route' => 'profile', 'sort_order' => 10],

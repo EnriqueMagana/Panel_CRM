@@ -87,7 +87,8 @@
                                         str_starts_with($routeName, 'profile') ||
                                         str_starts_with($routeName, 'users') ||
                                         str_starts_with($routeName, 'roles') ||
-                                        str_starts_with($routeName, 'navigation'))
+                                        str_starts_with($routeName, 'navigation') ||
+                                        str_starts_with($routeName, 'technical-center'))
                                     <option value="{{ $routeName }}">{{ $routeName }}</option>
                                 @endif
                             @endforeach

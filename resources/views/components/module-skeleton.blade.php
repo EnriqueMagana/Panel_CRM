@@ -1,6 +1,7 @@
 @props(['type' => 'dashboard'])
 
 <div data-module-loader class="hidden" data-module-skeleton="{{ $type }}" aria-live="polite" aria-busy="true">
+    <span class="sr-only">Cargando contenido…</span>
     <div class="module-skeleton rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
         <div class="module-skeleton-variant module-skeleton-dashboard">
             <div class="mb-6 flex items-center justify-between gap-3">

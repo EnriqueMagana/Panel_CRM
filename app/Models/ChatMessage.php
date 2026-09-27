@@ -11,7 +11,14 @@ class ChatMessage extends Model
         'chat_conversation_id',
         'user_id',
         'direction',
+        'type',
+        'event_data',
         'body',
+        'attachment_path',
+        'attachment_variants',
+        'attachment_name',
+        'attachment_mime',
+        'attachment_size',
         'sent_at',
         'read_at',
     ];
@@ -21,6 +28,8 @@ class ChatMessage extends Model
         return [
             'sent_at' => 'datetime',
             'read_at' => 'datetime',
+            'event_data' => 'array',
+            'attachment_variants' => 'array',
         ];
     }
 
@@ -32,5 +41,26 @@ class ChatMessage extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function getAttachmentUrlAttribute(): ?string
+    {
+        return $this->attachmentUrlFor($this->type === 'gif' ? 'original' : 'medium');
+    }
+
+    public function attachmentUrlFor(string $size = 'medium'): ?string
+    {
+        $path = $this->attachment_variants[$size]
+            ?? $this->attachment_variants['medium']
+            ?? $this->attachment_path;
+
+        if (! $path) {
+            return null;
+        }
+
+        return route('media.public', [
+            'path' => $path,
+            'v' => $this->updated_at?->getTimestamp(),
+        ], false);
     }
 }

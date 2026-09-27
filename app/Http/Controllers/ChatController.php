@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ChatConversation;
 use App\Models\ChatMessage;
 use App\Models\User;
+use App\Services\ChatService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -24,7 +25,12 @@ class ChatController extends Controller
             ->get();
 
         $conversations = ChatConversation::query()
-            ->with(['participants', 'messages' => fn ($query) => $query->orderByDesc('sent_at')->orderByDesc('id')])
+            ->with(['participants', 'latestMessage'])
+            ->withCount([
+                'messages as unread_count' => fn ($query) => $query
+                    ->whereNull('read_at')
+                    ->where('user_id', '!=', $user->id),
+            ])
             ->whereHas('participants', function ($query) use ($user) {
                 $query->where('users.id', $user->id);
             })
@@ -34,6 +40,7 @@ class ChatController extends Controller
 
         $selectedConversation = null;
         $selectedContact = null;
+        $messages = collect();
 
         if ($request->filled('conversation_id')) {
             $selectedConversation = $conversations->firstWhere('id', $request->integer('conversation_id'));
@@ -42,9 +49,31 @@ class ChatController extends Controller
 
         if (! $selectedConversation && $request->filled('contact_id')) {
             $selectedContact = $contacts->firstWhere('id', $request->integer('contact_id'));
-            $selectedConversation = $conversations->first(function ($conversation) use ($selectedContact) {
-                return $selectedContact && $conversation->participants->contains('id', $selectedContact->id);
+            $selectedConversation = $conversations->first(function ($conversation) use ($selectedContact, $user) {
+                return $selectedContact
+                    && $conversation->type === 'direct'
+                    && $conversation->participants->count() === 2
+                    && $conversation->participants->contains('id', $selectedContact->id)
+                    && $conversation->participants->contains('id', $user->id);
             });
+        }
+
+        if ($selectedConversation) {
+            if ($selectedConversation->type === 'direct') {
+                $selectedContact ??= $selectedConversation->participants
+                    ->first(fn ($participant) => $participant->id !== $user->id);
+            }
+
+            $selectedConversation->messagesVisibleTo($user)
+                ->where('user_id', '!=', $user->id)
+                ->whereNull('read_at')
+                ->update(['read_at' => now()]);
+
+            $messages = $selectedConversation->messagesVisibleTo($user)
+                ->with('user')
+                ->orderBy('sent_at')
+                ->orderBy('id')
+                ->get();
         }
 
         return view('chats', [
@@ -53,6 +82,7 @@ class ChatController extends Controller
             'conversations' => $conversations,
             'selectedConversation' => $selectedConversation,
             'selectedContact' => $selectedContact,
+            'messages' => $messages,
         ]);
     }
 
@@ -60,7 +90,7 @@ class ChatController extends Controller
     {
         $data = $request->validate([
             'contact_id' => ['required', 'integer', 'exists:users,id'],
-            'body' => ['required', 'string', 'min:1', 'max:2000'],
+            'body' => ['nullable', 'string', 'max:2000'],
         ]);
 
         $user = Auth::user();
@@ -73,6 +103,7 @@ class ChatController extends Controller
 
         $conversation = ChatConversation::query()
             ->where('type', 'direct')
+            ->has('participants', '=', 2)
             ->whereHas('participants', fn ($query) => $query->where('users.id', $user->id))
             ->whereHas('participants', fn ($query) => $query->where('users.id', $contact->id))
             ->first();
@@ -85,27 +116,34 @@ class ChatController extends Controller
             ]);
 
             $conversation->participants()->syncWithoutDetaching([$user->id, $contact->id]);
+        } else {
+            $conversation->participants()->updateExistingPivot($user->id, ['hidden_at' => null]);
         }
 
-        $message = ChatMessage::query()->create([
-            'chat_conversation_id' => $conversation->id,
-            'user_id' => $user->id,
-            'direction' => 'outgoing',
-            'body' => trim($data['body']),
-            'sent_at' => now(),
-        ]);
+        if (filled($data['body'] ?? null)) {
+            $message = ChatMessage::query()->create([
+                'chat_conversation_id' => $conversation->id,
+                'user_id' => $user->id,
+                'direction' => 'outgoing',
+                'body' => trim($data['body']),
+                'sent_at' => now(),
+            ]);
 
-        $conversation->update(['last_message_at' => $message->sent_at]);
+            $conversation->update(['last_message_at' => $message->sent_at]);
+            $conversation->participants()->newPivotStatement()
+                ->where('chat_conversation_id', $conversation->id)
+                ->update(['hidden_at' => null, 'updated_at' => now()]);
+        }
 
-        return redirect()->route('chats', ['contact_id' => $contact->id]);
+        return redirect()->route('chats', ['conversation_id' => $conversation->id]);
     }
 
     public function storeGroup(Request $request)
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:120'],
-            'participants' => ['required', 'array'],
-            'participants.*' => ['integer', 'exists:users,id'],
+            'participants' => ['required', 'array', 'min:1'],
+            'participants.*' => ['integer', 'distinct', 'exists:users,id'],
         ]);
 
         $user = Auth::user();
@@ -119,7 +157,8 @@ class ChatController extends Controller
 
         $group->participants()->sync($participants);
 
-        return back()->with('status', 'Grupo creado correctamente.');
+        return redirect()->route('chats', ['conversation_id' => $group->id])
+            ->with('status', 'Grupo creado correctamente.');
     }
 
     public function storeMessage(Request $request, ChatConversation $conversation)
@@ -143,11 +182,14 @@ class ChatController extends Controller
         ]);
 
         $conversation->update(['last_message_at' => $message->sent_at]);
+        $conversation->participants()->newPivotStatement()
+            ->where('chat_conversation_id', $conversation->id)
+            ->update(['hidden_at' => null, 'updated_at' => now()]);
 
         return redirect()->route('chats', ['conversation_id' => $conversation->id]);
     }
 
-    public function destroyConversation(ChatConversation $conversation)
+    public function destroyConversation(ChatConversation $conversation, ChatService $chat)
     {
         $user = Auth::user();
 
@@ -155,11 +197,10 @@ class ChatController extends Controller
             abort(403);
         }
 
-        $conversation->participants()->detach($user->id);
-
-        if ($conversation->participants()->count() === 0) {
-            $conversation->messages()->delete();
-            $conversation->delete();
+        if ($conversation->type === 'direct') {
+            $chat->hideDirectConversation($conversation, $user);
+        } else {
+            $chat->leave($conversation, $user);
         }
 
         return redirect()->route('chats');
@@ -169,7 +210,7 @@ class ChatController extends Controller
     {
         $user = Auth::user();
 
-        if ($message->user_id !== $user->id || $message->chat_conversation_id !== $conversation->id) {
+        if ($message->type === 'system' || $message->user_id !== $user->id || $message->chat_conversation_id !== $conversation->id) {
             abort(403);
         }
 
@@ -188,7 +229,7 @@ class ChatController extends Controller
     {
         $user = Auth::user();
 
-        if ($message->user_id !== $user->id || $message->chat_conversation_id !== $conversation->id) {
+        if ($message->type === 'system' || $message->user_id !== $user->id || $message->chat_conversation_id !== $conversation->id) {
             abort(403);
         }
 

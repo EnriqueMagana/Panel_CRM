@@ -4,8 +4,8 @@ namespace App\Livewire;
 
 use App\Actions\Fortify\UpdateUserPassword;
 use App\Models\User;
+use App\Traits\ProcessesResponsiveImages;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -18,7 +18,7 @@ use Livewire\WithFileUploads;
 
 class ProfileSecurity extends Component
 {
-    use WithFileUploads;
+    use ProcessesResponsiveImages, WithFileUploads;
 
     public string $name = '';
 
@@ -94,12 +94,15 @@ class ProfileSecurity extends Component
 
         $updates = ['name' => $validated['name']];
         $previousPhoto = $user->profile_photo_path;
+        $previousVariants = $user->profile_photo_variants;
 
         if ($validated['profileMode'] === 'avatar') {
             $updates['profile_photo_path'] = null;
+            $updates['profile_photo_variants'] = null;
             $updates['avatar_seed'] = $validated['selectedAvatarSeed'];
         } elseif ($this->photo) {
-            $photoPath = $this->photo->store('profile-photos', 'public');
+            $variants = $this->storeResponsiveImage($this->photo, 'profile-photos', square: true);
+            $photoPath = $variants['medium'];
 
             if (! $photoPath) {
                 $this->addError('photo', 'No se pudo guardar la imagen. Inténtalo de nuevo.');
@@ -108,12 +111,13 @@ class ProfileSecurity extends Component
             }
 
             $updates['profile_photo_path'] = $photoPath;
+            $updates['profile_photo_variants'] = $variants;
         }
 
         $user->forceFill($updates)->save();
 
         if ($previousPhoto && $previousPhoto !== $user->profile_photo_path) {
-            Storage::disk('public')->delete($previousPhoto);
+            $this->deleteResponsiveImages($previousVariants, $previousPhoto);
         }
 
         $this->reset('photo');
@@ -128,9 +132,10 @@ class ProfileSecurity extends Component
         $user = Auth::user();
 
         if ($user->profile_photo_path) {
-            Storage::disk('public')->delete($user->profile_photo_path);
+            $this->deleteResponsiveImages($user->profile_photo_variants, $user->profile_photo_path);
             $user->forceFill([
                 'profile_photo_path' => null,
+                'profile_photo_variants' => null,
                 'avatar_seed' => $user->avatar_seed ?: (string) Str::uuid(),
             ])->save();
         }
@@ -238,9 +243,7 @@ class ProfileSecurity extends Component
         $this->dispatch(
             'profile-avatar-updated',
             userId: $user->id,
-            profilePhotoUrl: $user->profile_photo_path
-                ? Storage::disk('public')->url($user->profile_photo_path)
-                : null,
+            profilePhotoUrl: $user->profile_photo_url,
             avatarSeed: $user->avatar_seed ?: hash('sha256', mb_strtolower(trim($user->email))),
         );
     }

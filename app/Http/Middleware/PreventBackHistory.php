@@ -10,6 +10,10 @@ class PreventBackHistory
 {
     public function handle(Request $request, Closure $next): Response
     {
+        if ($request->routeIs('media.public')) {
+            return $next($request);
+        }
+
         $response = $next($request);
 
         $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');

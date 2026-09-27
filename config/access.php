@@ -34,5 +34,12 @@ return [
                 'manage' => 'Administrar',
             ],
         ],
+        'technical_center' => [
+            'label' => 'Centro técnico',
+            'permissions' => [
+                'view' => 'Ver',
+                'manage' => 'Administrar',
+            ],
+        ],
     ],
 ];

@@ -11,7 +11,7 @@
 @php($avatarClass = trim($size . ' shrink-0 object-cover ' . $attributes->get('class', '')))
 
 @if ($user->profile_photo_path && $seed === null)
-    <img src="{{ Storage::disk('public')->url($user->profile_photo_path) }}" width="{{ $pixels }}"
+    <img src="{{ $user->profile_photo_url }}" width="{{ $pixels }}"
         height="{{ $pixels }}" alt="{{ $alt }}" class="{{ $avatarClass }}"
         @if ($animate) data-blobatar-mode="{{ $animate }}" @endif
         @if ($sync) data-user-avatar-id="{{ $user->id }}" @endif
