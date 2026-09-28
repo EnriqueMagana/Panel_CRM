@@ -244,10 +244,3 @@ php artisan test
 ## 🏁 Resumen
 
 Panel CRM es un panel full stack de roles y permisos pensado para aplicaciones con módulos y administración centralizada. Su objetivo no es solo mostrar usuarios, sino crear una base segura, organizada y escalable para gestionar accesos y funciones dentro del sistema.
-
-Si quieres, puedo dejarte una versión aún más premium del README con:
-
-- badged de tecnologías,
-- una sección de demo o screenshots,
-- estructura de módulos en formato de roadmap,
-- y un estilo más moderno tipo proyecto SaaS.
