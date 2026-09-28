@@ -4,6 +4,12 @@ Sistema modular de administración, control de acceso y gestión operativa para 
 
 > El objetivo principal del proyecto es centralizar la administración de usuarios, roles, módulos y permisos para que cada usuario acceda solo a lo que necesita dentro del sistema.
 
+## 📸 Capturas del sistema
+
+![Dashboard claro](public/images/shadcn-admin-light.png)
+
+![Dashboard oscuro](public/images/shadcn-admin-dark.png)
+
 ## 🎯 Objetivo del proyecto
 
 Panel CRM es un panel de administración orientado a:
@@ -104,7 +110,7 @@ Este proyecto incluye un panel full stack con módulos y permisos dinámicos. En
 ### 1) Clona el repositorio
 
 ```bash
-git clone https://github.com/tu-usuario/Panel_CRM.git
+git clone https://github.com/EnriqueMagana/Panel_CRM.git
 cd Panel_CRM
 ```
 
