@@ -13,7 +13,7 @@ class BrowserExtensionSeeder extends Seeder
         $source = public_path('downloads/snippetdesk-browser-extension.zip');
         $target = 'browser-extensions/snippetdesk-browser-extension.zip';
 
-        if (is_file($source) && ! Storage::disk('public')->exists($target)) {
+        if (is_file($source)) {
             Storage::disk('public')->put($target, file_get_contents($source));
         }
 
@@ -24,11 +24,13 @@ class BrowserExtensionSeeder extends Seeder
         $extension = BrowserExtension::query()->firstOrNew(['slug' => 'snippetdesk-browser']);
         $extension->fill([
             'name' => 'Snippetdesk para navegador',
-            'version' => '1.0.0',
-            'description' => 'Abre Snippetdesk en el panel lateral del navegador y pega mensajes directamente en el campo activo del sistema de tickets.',
+            'version' => '1.2.0',
+            'description' => 'Selecciona visualmente cualquier campo compatible de una página web y pega mensajes desde Snippetdesk aunque cambies de pestaña.',
             'features' => [
                 'Panel lateral sin cambiar de pestaña',
-                'Pegado directo en inputs, textareas y editores compatibles',
+                'Selector visual global para inputs, textareas y editores',
+                'Destino persistente aunque el campo pierda el foco',
+                'Verificación y resaltado del campo configurado',
                 'Detección automática de conexión con Snippetdesk',
             ],
             'supported_browsers' => 'Chrome, Edge',

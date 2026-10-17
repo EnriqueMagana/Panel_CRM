@@ -43,9 +43,20 @@
     </script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
+    <style>
+        html.session-revalidating body {
+            visibility: hidden;
+        }
+    </style>
 </head>
 
-<body class="bg-background text-foreground antialiased" data-snippetdesk-app>
+@php
+    $layoutIamSettings = app(\App\Services\IamSettings::class);
+@endphp
+<body class="bg-background text-foreground antialiased" data-snippetdesk-app
+    data-session-idle-timeout="{{ max(1, $layoutIamSettings->idleTimeoutMinutes()) * 60 }}"
+    data-session-warning="{{ max(15, $layoutIamSettings->warningSeconds()) }}"
+    data-session-status-url="{{ route('session.status') }}" data-login-url="{{ route('login') }}">
     <div id="global-confirm-modal" aria-hidden="true"
         class="pointer-events-none fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
         <div class="pointer-events-auto w-full max-w-md rounded-xl border border-border bg-background p-5 text-foreground shadow-2xl"
@@ -60,16 +71,48 @@
             </div>
         </div>
     </div>
+
+    <dialog data-session-timeout-dialog aria-labelledby="session-timeout-title"
+        class="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-border bg-background p-0 text-foreground shadow-2xl backdrop:bg-black/50">
+        <div class="p-5 sm:p-6">
+            <div class="flex items-start gap-3">
+                <span class="grid size-10 shrink-0 place-items-center rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                    <svg viewBox="0 0 24 24" fill="none" class="size-5" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" />
+                        <path d="M12 7v5l3 2M9 3.5h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </span>
+                <div>
+                    <h2 id="session-timeout-title" class="text-lg font-semibold">Tu sesión está por terminar</h2>
+                    <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                        Por seguridad, cerraremos la sesión en <strong data-session-countdown class="text-foreground">2:00</strong>
+                        si no confirmas que deseas continuar.
+                    </p>
+                </div>
+            </div>
+            <div class="mt-6 grid gap-2 sm:grid-cols-2">
+                <button type="button" data-session-logout-now
+                    class="min-h-11 rounded-md border border-input px-4 text-sm font-medium hover:bg-accent">Cerrar sesión</button>
+                <button type="button" data-session-continue
+                    class="min-h-11 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60">Continuar sesión</button>
+            </div>
+        </div>
+    </dialog>
+    <form method="POST" action="{{ route('logout') }}" data-session-timeout-logout class="hidden">
+        @csrf
+    </form>
     @php
         $layoutUser = auth()->user();
         $layoutRoles = $layoutUser->getRoleNames();
-        $layoutRouteEnabled = function (string $routeName): bool {
-            $items = \App\Models\SidebarItem::query()->with('parent:id,is_active')->where('route_name', $routeName)->get();
-
-            return $items->isEmpty() || $items->contains(
-                fn ($item) => $item->is_active && ($item->parent_id === null || $item->parent?->is_active),
-            );
-        };
+        $layoutSearchItems = \App\Models\SidebarItem::query()
+            ->with('parent:id,label,is_active,permission_name')
+            ->where('type', 'link')
+            ->where('is_active', true)
+            ->ordered()
+            ->get()
+            ->filter(fn ($item) => filled($item->route_name)
+                && Route::has($item->route_name)
+                && $item->isAccessibleTo($layoutUser));
     @endphp
 
     <div id="app-shell" class="min-h-dvh lg:grid lg:grid-cols-[256px_minmax(0,1fr)]">
@@ -320,72 +363,15 @@
             <div class="max-h-[min(24rem,60vh)] overflow-y-auto p-2" role="listbox"
                 aria-label="Resultados de búsqueda">
                 <p class="px-3 py-2 text-xs font-medium text-muted-foreground">Navegación</p>
-                @can('dashboard.view')
-                    <a role="option" wire:navigate.hover data-search-item data-search-value="inicio home dashboard"
-                        href="{{ route('home') }}"
-                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Inicio</span><span
-                            class="text-xs text-muted-foreground">General</span></a>
-                @endcan
-                @can('users.view')
-                    <a role="option" wire:navigate.hover data-search-item data-search-value="usuarios users cuentas"
-                        href="{{ route('users') }}"
-                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Usuarios</span><span
-                            class="text-xs text-muted-foreground">Administración</span></a>
-                @endcan
-                @can('roles.view')
-                    <a role="option" wire:navigate.hover data-search-item data-search-value="roles permisos permisos por modulo"
-                        href="{{ route('roles') }}"
-                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Roles</span><span
-                            class="text-xs text-muted-foreground">Administración</span></a>
-                @endcan
-                @can('navigation.view')
-                    <a role="option" wire:navigate.hover data-search-item data-search-value="navegación menú sidebar"
-                        href="{{ route('navigation') }}"
-                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Navegación</span><span
-                            class="text-xs text-muted-foreground">Administración</span></a>
-                @endcan
-                @can('technical_center.view')
+                @foreach ($layoutSearchItems as $searchItem)
                     <a role="option" wire:navigate.hover data-search-item
-                        data-search-value="centro técnico configuraciones sistema chats historial privacidad"
-                        href="{{ route('technical-center') }}"
-                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Centro técnico</span><span
-                            class="text-xs text-muted-foreground">Administración</span></a>
-                @endcan
-                @can('preset_messages.view')
-                    <a role="option" wire:navigate.hover data-search-item
-                        data-search-value="mensajes predeterminados plantillas respuestas rápidas copiar"
-                        href="{{ route('preset-messages') }}"
-                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Mensajes predeterminados</span><span
-                            class="text-xs text-muted-foreground">Productividad</span></a>
-                @endcan
-                @can('browser_extensions.view')
-                    @if ($layoutRouteEnabled('browser-extension'))
-                        <a role="option" wire:navigate.hover data-search-item
-                            data-search-value="extensión navegador chrome edge panel lateral pegar tickets"
-                            href="{{ route('browser-extension') }}"
-                            class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Extensión del navegador</span><span
-                                class="text-xs text-muted-foreground">Productividad</span></a>
-                    @endif
-                @endcan
-                @if ($layoutRouteEnabled('chats'))
-                    <a role="option" wire:navigate.hover data-search-item data-search-value="chats mensajes inbox conversación"
-                        href="{{ route('chats') }}"
-                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Chats</span><span
-                            class="text-xs text-muted-foreground">General</span></a>
-                @endif
-                <a role="option" wire:navigate data-search-item data-search-value="perfil nombre imagen foto cuenta"
-                    href="{{ route('profile') }}#profile-details"
-                    class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Perfil</span><span
-                        class="text-xs text-muted-foreground">Cuenta</span></a>
-                <a role="option" wire:navigate data-search-item data-search-value="contraseña password clave seguridad"
-                    href="{{ route('profile') }}#password-heading"
-                    class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Contraseña</span><span
-                        class="text-xs text-muted-foreground">Cuenta</span></a>
-                <a role="option" wire:navigate data-search-item
-                    data-search-value="dos pasos 2fa autenticador verificación seguridad"
-                    href="{{ route('profile') }}#two-factor-heading"
-                    class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Verificación
-                        en dos pasos</span><span class="text-xs text-muted-foreground">Cuenta</span></a>
+                        data-search-value="{{ Str::lower($searchItem->label.' '.$searchItem->route_name.' '.($searchItem->parent?->label ?? 'General')) }}"
+                        href="{{ route($searchItem->route_name).($searchItem->route_fragment ? '#'.$searchItem->route_fragment : '') }}"
+                        class="flex min-h-11 items-center justify-between gap-3 rounded-md px-3 text-sm transition-colors hover:bg-accent">
+                        <span class="truncate">{{ $searchItem->label }}</span>
+                        <span class="shrink-0 text-xs text-muted-foreground">{{ $searchItem->parent?->label ?? 'General' }}</span>
+                    </a>
+                @endforeach
                 <p data-search-empty class="hidden px-3 py-8 text-center text-sm text-muted-foreground">No se
                     encontraron resultados.</p>
             </div>

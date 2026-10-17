@@ -3,6 +3,7 @@
 namespace App\Actions\Fortify;
 
 use App\Models\User;
+use App\Services\IamAuditLogger;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -27,6 +28,8 @@ class ResetUserPassword implements ResetsUserPasswords
 
         $updates = [
             'password' => Hash::make($input['password']),
+            'must_change_password' => false,
+            'password_changed_at' => now(),
         ];
 
         if ($user->status === 'invited') {
@@ -35,5 +38,6 @@ class ResetUserPassword implements ResetsUserPasswords
         }
 
         $user->forceFill($updates)->save();
+        app(IamAuditLogger::class)->record('password.reset', 'Contraseña restablecida.', null, $user);
     }
 }

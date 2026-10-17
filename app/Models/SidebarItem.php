@@ -45,4 +45,26 @@ class SidebarItem extends Model
     {
         return $query->orderBy('sort_order')->orderBy('id');
     }
+
+    public function isPermittedTo(User $user, bool $checkParent = true): bool
+    {
+        if (filled($this->permission_name) && ! $user->can($this->permission_name)) {
+            return false;
+        }
+
+        if (! $checkParent || $this->parent_id === null) {
+            return true;
+        }
+
+        return $this->parent !== null && $this->parent->isPermittedTo($user, false);
+    }
+
+    public function isAccessibleTo(User $user): bool
+    {
+        if (! $this->is_active || ! $this->isPermittedTo($user)) {
+            return false;
+        }
+
+        return $this->parent_id === null || $this->parent?->is_active === true;
+    }
 }

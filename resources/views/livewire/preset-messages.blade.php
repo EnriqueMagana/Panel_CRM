@@ -15,9 +15,16 @@
     @endif
 
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        @php
+            $messageLibraries = ['mine' => 'Mis mensajes'];
+            if (auth()->user()->can('preset_messages.view_global')) {
+                $messageLibraries['global'] = 'Biblioteca global';
+            }
+            $messageLibraries['hidden'] = 'Ocultos';
+        @endphp
         <nav aria-label="Bibliotecas de mensajes"
-            class="grid w-full grid-cols-3 gap-1 rounded-lg border border-border bg-muted/40 p-1 lg:w-auto">
-            @foreach (['mine' => 'Mis mensajes', 'global' => 'Biblioteca global', 'hidden' => 'Ocultos'] as $value => $label)
+            class="grid w-full {{ count($messageLibraries) === 3 ? 'grid-cols-3' : 'grid-cols-2' }} gap-1 rounded-lg border border-border bg-muted/40 p-1 lg:w-auto">
+            @foreach ($messageLibraries as $value => $label)
                 <button type="button" wire:click="selectLibrary('{{ $value }}')"
                     aria-pressed="{{ $library === $value ? 'true' : 'false' }}"
                     class="min-h-11 rounded-md px-3 text-sm font-medium transition-colors {{ $library === $value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground' }}">
@@ -77,7 +84,8 @@
                         class="w-full resize-y rounded-md border border-input bg-background px-3 py-2.5 text-base leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:text-sm"
                         placeholder="Hola &#123;&#123;nombre&#125;&#125;, tu solicitud &#123;&#123;folio&#125;&#125; está lista."></textarea>
                     <p class="text-xs leading-5 text-muted-foreground">
-                        Las palabras entre llaves dobles se convertirán en campos antes de copiar el mensaje.
+                        Usa <code>&#123;&#123;variable&#125;&#125;</code>. El formato anterior
+                        <code>[variable]</code> sigue siendo compatible y se convierte al guardar.
                     </p>
                     <div class="grid gap-3 rounded-lg border border-border bg-muted/25 p-3">
                         <div>
@@ -153,11 +161,12 @@
 
     <section class="grid gap-6" aria-label="Mensajes predeterminados">
         <x-preset-messages.message-collection :messages="$pinnedMessages" :library="$library"
-            :extension-configured="$extensionConfigured" pinned title="Fijados" />
+            :extension-configured="$extensionConfigured" :imported-source-ids="$importedSourceIds" pinned title="Fijados" />
 
         @if ($messages->isNotEmpty())
             <x-preset-messages.message-collection :messages="$messages->getCollection()" :library="$library"
                 :extension-configured="$extensionConfigured"
+                :imported-source-ids="$importedSourceIds"
                 :hidden="$library === 'hidden'" :title="$pinnedMessages->isNotEmpty() ? ($library === 'hidden' ? null : 'Todos los mensajes') : null" />
         @elseif ($pinnedMessages->isEmpty())
             <div class="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-6 py-12 text-center">

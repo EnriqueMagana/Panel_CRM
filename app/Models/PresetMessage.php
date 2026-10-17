@@ -32,7 +32,7 @@ class PresetMessage extends Model
         ],
     ];
 
-    protected $fillable = ['created_by', 'title', 'body', 'variables', 'is_active'];
+    protected $fillable = ['created_by', 'source_message_id', 'title', 'body', 'variables', 'is_active'];
 
     protected function casts(): array
     {
@@ -59,9 +59,26 @@ class PresetMessage extends Model
     /** @return list<string> */
     public static function extractVariables(string $body): array
     {
-        preg_match_all('/\{\{\s*([A-Za-z][A-Za-z0-9_]*)\s*\}\}/u', $body, $matches);
+        preg_match_all(
+            '/(?:\{\{\s*([A-Za-z][A-Za-z0-9_]*)\s*\}\}|\[\s*([A-Za-z][A-Za-z0-9_]*)\s*\])/u',
+            $body,
+            $matches,
+            PREG_SET_ORDER,
+        );
 
-        return array_values(array_unique($matches[1] ?? []));
+        return array_values(array_unique(array_map(
+            fn (array $match) => $match[1] !== '' ? $match[1] : $match[2],
+            $matches,
+        )));
+    }
+
+    public static function normalizeVariableSyntax(string $body): string
+    {
+        return preg_replace_callback(
+            '/\[\s*([A-Za-z][A-Za-z0-9_]*)\s*\]/u',
+            fn (array $match) => '{{'.$match[1].'}}',
+            $body,
+        ) ?? $body;
     }
 
     /** @return array<string, array{label: string, example: string}> */
@@ -85,6 +102,10 @@ class PresetMessage extends Model
     /** @return list<string> */
     public function manualVariables(): array
     {
-        return array_values(array_diff($this->variables ?? [], array_keys(self::AUTOMATIC_VARIABLES)));
+        $variables = filled($this->body)
+            ? self::extractVariables($this->body)
+            : ($this->variables ?? []);
+
+        return array_values(array_diff($variables, array_keys(self::AUTOMATIC_VARIABLES)));
     }
 }

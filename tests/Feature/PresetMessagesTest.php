@@ -64,6 +64,32 @@ class PresetMessagesTest extends TestCase
         $this->assertSame($user->id, $message->created_by);
     }
 
+    public function test_legacy_square_bracket_variables_are_supported_and_normalized_when_saved(): void
+    {
+        $user = User::factory()->create();
+        $user->givePermissionTo([
+            Permission::findOrCreate('preset_messages.view', 'web'),
+            Permission::findOrCreate('preset_messages.create', 'web'),
+        ]);
+
+        Livewire::actingAs($user)->test(PresetMessages::class)
+            ->call('createMessage')
+            ->set('title', 'Mensaje heredado')
+            ->set('body', 'Hola [nombre], hoy es [fecha] y tu folio es {{folio}}.')
+            ->call('saveMessage')
+            ->assertHasNoErrors();
+
+        $message = PresetMessage::query()->firstOrFail();
+        $this->assertSame('Hola {{nombre}}, hoy es {{fecha}} y tu folio es {{folio}}.', $message->body);
+        $this->assertSame(['nombre', 'fecha', 'folio'], $message->variables);
+
+        $legacyMessage = new PresetMessage([
+            'body' => 'Hola [nombre], hoy es [fecha].',
+            'variables' => [],
+        ]);
+        $this->assertSame(['nombre'], $legacyMessage->manualVariables());
+    }
+
     public function test_automatic_variables_do_not_generate_manual_inputs(): void
     {
         $message = new PresetMessage([
@@ -113,11 +139,50 @@ class PresetMessagesTest extends TestCase
             ->assertDontSee('Soporte');
     }
 
-    public function test_user_sees_own_messages_separately_from_active_coworker_messages(): void
+    public function test_global_library_requires_permission_and_shared_messages_cannot_be_pinned(): void
     {
         $user = User::factory()->create();
         $coworker = User::factory()->create();
         $user->givePermissionTo(Permission::findOrCreate('preset_messages.view', 'web'));
+        $source = PresetMessage::create([
+            'created_by' => $coworker->id,
+            'title' => 'Solo biblioteca global',
+            'body' => 'Contenido compartido',
+            'variables' => [],
+            'is_active' => true,
+        ]);
+
+        Livewire::actingAs($user)->test(PresetMessages::class)
+            ->assertDontSee('Biblioteca global')
+            ->call('selectLibrary', 'global')
+            ->assertForbidden();
+
+        $user->givePermissionTo(Permission::findOrCreate('preset_messages.view_global', 'web'));
+
+        Livewire::actingAs($user)->test(PresetMessages::class)
+            ->assertSee('Biblioteca global')
+            ->call('selectLibrary', 'global')
+            ->assertSee('Solo biblioteca global')
+            ->assertDontSee('Fijar mensaje')
+            ->assertDontSee("wire:click=\"editMessage({$source->id})\"", false)
+            ->assertDontSee("wire:click=\"deleteMessage({$source->id})\"", false)
+            ->call('togglePin', $source->id)
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('preset_message_user', [
+            'user_id' => $user->id,
+            'preset_message_id' => $source->id,
+        ]);
+    }
+
+    public function test_user_sees_own_messages_separately_from_active_coworker_messages(): void
+    {
+        $user = User::factory()->create();
+        $coworker = User::factory()->create();
+        $user->givePermissionTo([
+            Permission::findOrCreate('preset_messages.view', 'web'),
+            Permission::findOrCreate('preset_messages.view_global', 'web'),
+        ]);
 
         PresetMessage::create([
             'created_by' => $user->id,
@@ -148,6 +213,78 @@ class PresetMessagesTest extends TestCase
             ->assertSee('Mensaje compartido')
             ->assertSee($coworker->name)
             ->assertDontSee('Mensaje privado inactivo');
+    }
+
+    public function test_global_library_shows_thirty_messages_per_page(): void
+    {
+        $user = User::factory()->create();
+        $coworker = User::factory()->create();
+        $user->givePermissionTo([
+            Permission::findOrCreate('preset_messages.view', 'web'),
+            Permission::findOrCreate('preset_messages.view_global', 'web'),
+        ]);
+
+        foreach (range(1, 31) as $number) {
+            PresetMessage::create([
+                'created_by' => $coworker->id,
+                'title' => "Mensaje global {$number}",
+                'body' => "Contenido global {$number}",
+                'variables' => [],
+                'is_active' => true,
+            ]);
+        }
+
+        Livewire::actingAs($user)->test(PresetMessages::class)
+            ->call('selectLibrary', 'global')
+            ->assertViewHas('messages', fn ($messages) => $messages->perPage() === 30
+                && $messages->count() === 30
+                && $messages->total() === 31);
+    }
+
+    public function test_global_message_author_is_in_the_footer_and_can_be_imported_once(): void
+    {
+        $user = User::factory()->create();
+        $coworker = User::factory()->create(['name' => 'Carlos Dzib']);
+        $user->givePermissionTo([
+            Permission::findOrCreate('preset_messages.view', 'web'),
+            Permission::findOrCreate('preset_messages.view_global', 'web'),
+            Permission::findOrCreate('preset_messages.create', 'web'),
+        ]);
+        $source = PresetMessage::create([
+            'created_by' => $coworker->id,
+            'title' => 'Atención a clientes',
+            'body' => 'Mensaje compartido con {{nombre}}.',
+            'variables' => ['nombre'],
+            'is_active' => true,
+        ]);
+
+        $component = Livewire::actingAs($user)->test(PresetMessages::class)
+            ->call('selectLibrary', 'global')
+            ->assertSee('Importar a Mis mensajes')
+            ->assertSee('Compartido por')
+            ->assertSee('Carlos Dzib');
+
+        $this->assertSame(1, substr_count($component->html(), 'Compartido por'));
+
+        $component
+            ->call('importMessage', $source->id)
+            ->assertSee('Mensaje importado a Mis mensajes.')
+            ->assertSee('Ya importado')
+            ->assertDontSee('Importar a Mis mensajes')
+            ->call('importMessage', $source->id)
+            ->assertSee('Este mensaje ya está en Mis mensajes.');
+
+        $this->assertDatabaseHas('preset_messages', [
+            'created_by' => $user->id,
+            'source_message_id' => $source->id,
+            'title' => 'Atención a clientes',
+            'body' => 'Mensaje compartido con {{nombre}}.',
+            'is_active' => true,
+        ]);
+        $this->assertSame(1, PresetMessage::query()
+            ->where('created_by', $user->id)
+            ->where('source_message_id', $source->id)
+            ->count());
     }
 
     public function test_user_cannot_modify_or_delete_a_coworker_message(): void

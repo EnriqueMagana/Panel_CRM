@@ -232,7 +232,7 @@
                 <div
                     class="absolute right-0 top-full z-20 mt-2 grid min-w-48 gap-1 rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-lg">
                     <p class="px-2 py-1 text-xs font-medium text-muted-foreground">Mostrar columnas</p>
-                    @foreach (['username' => 'Usuario', 'name' => 'Nombre', 'email' => 'Correo', 'phone_number' => 'Teléfono', 'status' => 'Estado', 'role' => 'Rol'] as $column => $label)
+                    @foreach (['name' => 'Nombre', 'email' => 'Correo', 'phone_number' => 'Teléfono', 'status' => 'Estado', 'role' => 'Rol'] as $column => $label)
                         <label class="flex min-h-10 items-center gap-2 rounded-sm px-2 text-sm hover:bg-accent"><input
                                 type="checkbox" wire:model.live="visibleColumns.{{ $column }}"
                                 class="size-4 rounded border-input accent-primary">{{ $label }}</label>
@@ -260,11 +260,7 @@
                                 wire:click="toggleSelectAll({{ json_encode($users->pluck('id')->all()) }})"
                                 aria-label="Seleccionar usuarios de esta página"
                                 class="size-4 rounded border-input accent-primary"></th>
-                        @if ($visibleColumns['username'])
-                            <th scope="col" class="px-3 py-3"><button type="button"
-                                    wire:click="sortBy('username')" class="flex items-center gap-2">Usuario <span
-                                        aria-hidden="true">↕</span></button></th>
-                        @endif
+                        <th scope="col" class="w-16 px-3 py-3">Avatar</th>
                         @if ($visibleColumns['name'])
                             <th scope="col" class="px-3 py-3"><button type="button" wire:click="sortBy('name')"
                                     class="flex items-center gap-2">Nombre <span aria-hidden="true">↕</span></button>
@@ -284,8 +280,7 @@
                         @if ($visibleColumns['role'])
                             <th scope="col" class="px-3 py-3">Rol</th>
                         @endif
-                        <th scope="col" class="w-14 px-3 py-3 text-right"><span class="sr-only">Acciones</span>
-                        </th>
+                        <th scope="col" class="w-24 px-3 py-3 text-right">Acciones</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
@@ -295,16 +290,12 @@
                             'hover:bg-muted/40' => !in_array($user->id, $selectedUsers),
                         ])>
                             <td class="px-3 py-3"><input type="checkbox" wire:model.live="selectedUsers"
-                                    value="{{ $user->id }}" aria-label="Seleccionar {{ $user->username }}"
+                                    value="{{ $user->id }}" aria-label="Seleccionar {{ $user->name }}"
                                     class="size-4 rounded border-input accent-primary"></td>
-                            @if ($visibleColumns['username'])
-                                <td class="px-3 py-3">
-                                    <div class="flex items-center gap-3"><x-user-avatar :user="$user"
-                                            size="size-9" :pixels="36" alt=""
-                                            class="rounded-full" /><span
-                                            class="font-medium">{{ $user->username }}</span></div>
-                                </td>
-                            @endif
+                            <td class="px-3 py-3">
+                                <x-user-avatar :user="$user" size="size-9" :pixels="36"
+                                    alt="Avatar de {{ $user->name }}" class="rounded-full" />
+                            </td>
                             @if ($visibleColumns['name'])
                                 <td class="px-3 py-3">{{ $user->name }}</td>
                             @endif
@@ -341,7 +332,7 @@
                             @endif
                             <td class="px-3 py-3 text-right">
                                 <details class="relative inline-block text-left" data-floating-menu>
-                                    <summary aria-label="Acciones para {{ $user->username }}"
+                                    <summary aria-label="Acciones para {{ $user->name }}"
                                         class="grid size-9 list-none cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
                                         <svg viewBox="0 0 24 24" fill="currentColor" class="size-4"
                                             aria-hidden="true">
@@ -352,7 +343,7 @@
                                     </summary>
                                     <div data-floating-panel
                                         class="fixed grid min-w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg">
-                                        @can('users.update')
+                                    @can('users.suspend')
                                             <button type="button" wire:click="editUser({{ $user->id }})"
                                                 class="min-h-10 rounded-sm px-3 text-left text-sm hover:bg-accent">Editar</button>
                                             @if ($user->id !== auth()->id() && $user->status !== 'invited')

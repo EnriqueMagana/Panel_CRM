@@ -7,13 +7,27 @@
             </p>
         </div>
         @can('navigation.manage')
-            <button type="button" wire:click="createItem"
-                class="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 sm:self-auto">
-                <svg viewBox="0 0 24 24" fill="none" class="size-4" aria-hidden="true">
-                    <path d="M12 5v14m-7-7h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                </svg>
-                Nuevo elemento
-            </button>
+            <div class="flex flex-wrap gap-2 self-start sm:self-auto">
+                <button type="button" wire:click="createGroup"
+                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium transition-colors hover:bg-accent">
+                    <svg viewBox="0 0 24 24" fill="none" class="size-4" aria-hidden="true">
+                        <path d="M3.5 7.5h6l1.7 2h9.3v8.75a1.75 1.75 0 0 1-1.75 1.75H5.25a1.75 1.75 0 0 1-1.75-1.75V7.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+                        <path d="M12 12.5v4m-2-2h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+                    </svg>
+                    Nuevo grupo
+                </button>
+                <button type="button" wire:click="createItem"
+                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+                    <svg viewBox="0 0 24 24" fill="none" class="size-4" aria-hidden="true">
+                        <path d="M12 5v14m-7-7h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                    </svg>
+                    Nuevo módulo
+                </button>
+            </div>
+        @else
+            <span class="inline-flex min-h-9 items-center rounded-full border border-border bg-muted/50 px-3 text-xs font-medium text-muted-foreground">
+                Vista limitada a tus permisos
+            </span>
         @endcan
     </header>
 
@@ -22,8 +36,8 @@
     @endif
 
     @if ($formOpen)
-        <x-modal id="navigation-form-heading" :title="$editingItemId ? 'Editar elemento' : 'Nuevo elemento'"
-            description="Configura la ubicación, el destino y el acceso del elemento." close-action="cancelForm"
+        <x-modal id="navigation-form-heading" :title="$editingItemId ? 'Editar elemento' : ($type === 'group' ? 'Nuevo grupo' : 'Nuevo módulo')"
+            description="Configura la jerarquía, el destino y el permiso requerido. El orden se ajusta con las flechas del listado." close-action="cancelForm"
             size="xl">
             <form wire:submit="saveItem" class="grid gap-5 sm:grid-cols-2">
                 <div class="grid gap-2">
@@ -128,15 +142,6 @@
                         <p class="text-sm text-destructive">{{ $message }}</p>
                     @enderror
                 </div>
-                <div class="grid gap-2">
-                    <label for="navigation-order" class="text-sm font-medium">Orden</label>
-                    <input id="navigation-order" wire:model="sortOrder" type="number" min="0"
-                        max="65535" required
-                        class="h-11 rounded-md border border-input bg-background px-3 text-sm">
-                    @error('sortOrder')
-                        <p class="text-sm text-destructive">{{ $message }}</p>
-                    @enderror
-                </div>
                 <label class="inline-flex min-h-11 items-center gap-2 text-sm sm:col-span-2">
                     <input type="checkbox" wire:model="isActive" class="size-4 rounded border-input accent-primary">
                     Elemento activo y visible
@@ -155,61 +160,32 @@
         </x-modal>
     @endif
 
-    <section class="space-y-3" aria-label="Elementos de navegación">
-        @foreach ($items as $item)
-            <div class="border-y border-border">
-                <div class="flex flex-wrap items-center gap-3 py-3">
-                    <x-sidebar-icon :name="$item->icon" />
-                    <span class="min-w-32 flex-1 font-medium">{{ $item->label }}</span>
-                    <span class="text-xs text-muted-foreground">{{ $item->type }} ·
-                        {{ $item->permission_name ?: 'sin permiso' }} · orden {{ $item->sort_order }}</span>
-                    <span @class([
-                        'rounded border px-2 py-1 text-xs',
-                        'border-emerald-600 text-emerald-700' => $item->is_active,
-                        'border-border text-muted-foreground' => !$item->is_active,
-                    ])>{{ $item->is_active ? 'Activo' : 'Inactivo' }}</span>
-                    @can('navigation.manage')
-                        <button type="button" wire:click="toggleActive({{ $item->id }})"
-                            wire:loading.attr="disabled" wire:target="toggleActive"
-                            aria-label="{{ $item->is_active ? 'Desactivar' : 'Activar' }} {{ $item->label }}"
-                            class="min-h-10 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:opacity-60">
-                            {{ $item->is_active ? 'Desactivar' : 'Activar' }}
-                        </button>
-                        <button type="button" wire:click="editItem({{ $item->id }})"
-                            class="min-h-10 rounded-md px-3 text-sm hover:bg-accent">Editar</button>
-                        <button type="button" wire:click="deleteItem({{ $item->id }})"
-                            wire:confirm="¿Eliminar {{ $item->label }} y sus elementos hijos?"
-                            class="min-h-10 rounded-md px-3 text-sm text-destructive hover:bg-accent">Eliminar</button>
-                    @endcan
-                </div>
-                @foreach ($item->children as $child)
-                    <div class="ml-6 flex flex-wrap items-center gap-3 border-t border-border py-3 pl-4">
-                        <x-sidebar-icon :name="$child->icon" />
-                        <span class="min-w-32 flex-1">{{ $child->label }}</span>
-                        <span class="text-xs text-muted-foreground">{{ $child->type }} ·
-                            {{ $child->route_name ?? $child->action_key }} ·
-                            {{ $child->permission_name ?: 'sin permiso' }} · orden {{ $child->sort_order }}</span>
-                        <span @class([
-                            'rounded border px-2 py-1 text-xs',
-                            'border-emerald-600 text-emerald-700' => $child->is_active,
-                            'border-border text-muted-foreground' => !$child->is_active,
-                        ])>{{ $child->is_active ? 'Activo' : 'Inactivo' }}</span>
-                        @can('navigation.manage')
-                            <button type="button" wire:click="toggleActive({{ $child->id }})"
-                                wire:loading.attr="disabled" wire:target="toggleActive"
-                                aria-label="{{ $child->is_active ? 'Desactivar' : 'Activar' }} {{ $child->label }}"
-                                class="min-h-10 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:opacity-60">
-                                {{ $child->is_active ? 'Desactivar' : 'Activar' }}
-                            </button>
-                            <button type="button" wire:click="editItem({{ $child->id }})"
-                                class="min-h-10 rounded-md px-3 text-sm hover:bg-accent">Editar</button>
-                            <button type="button" wire:click="deleteItem({{ $child->id }})"
-                                wire:confirm="¿Eliminar {{ $child->label }}?"
-                                class="min-h-10 rounded-md px-3 text-sm text-destructive hover:bg-accent">Eliminar</button>
-                        @endcan
+    <section class="space-y-4" aria-label="Elementos de navegación" aria-live="polite">
+        @forelse ($items as $item)
+            <article wire:key="navigation-parent-{{ $item->id }}"
+                class="overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm">
+                <x-navigation.item-row :item="$item" :is-first="$loop->first" :is-last="$loop->last"
+                    :can-manage="$canManage" />
+
+                @if ($item->type === 'group' && $item->children->isNotEmpty())
+                    <div class="border-t border-border bg-muted/20 px-3 py-2 sm:px-5">
+                        <p class="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Módulos del grupo
+                        </p>
+                        <div class="divide-y divide-border rounded-lg border border-border bg-background">
+                            @foreach ($item->children as $child)
+                                <x-navigation.item-row :item="$child" :nested="true" :is-first="$loop->first"
+                                    :is-last="$loop->last" :can-manage="$canManage" />
+                            @endforeach
+                        </div>
                     </div>
-                @endforeach
+                @endif
+            </article>
+        @empty
+            <div class="rounded-xl border border-dashed border-border px-6 py-12 text-center">
+                <p class="font-medium">No hay módulos disponibles</p>
+                <p class="mt-1 text-sm text-muted-foreground">Tu rol no tiene elementos de navegación asignados.</p>
             </div>
-        @endforeach
+        @endforelse
     </section>
 </div>

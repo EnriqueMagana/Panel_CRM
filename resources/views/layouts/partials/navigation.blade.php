@@ -1,18 +1,19 @@
 @php
+    $sidebarUser = auth()->user();
     $sidebarItems = \App\Models\SidebarItem::query()
         ->with(['children' => fn($query) => $query->where('is_active', true)->ordered()])
         ->whereNull('parent_id')
         ->where('is_active', true)
         ->ordered()
         ->get()
-        ->filter(fn($item) => blank($item->permission_name) || auth()->user()->can($item->permission_name));
+        ->filter(fn($item) => $item->isAccessibleTo($sidebarUser));
 @endphp
 
 <nav class="space-y-6 px-3 py-5" aria-label="Navegación principal">
     @foreach ($sidebarItems as $item)
         @php
             $children = $item->children->filter(
-                fn($child) => blank($child->permission_name) || auth()->user()->can($child->permission_name),
+                fn($child) => $child->isPermittedTo($sidebarUser, false),
             );
             $activeRoute =
                 $children->first(fn($child) => $child->active_route && request()->routeIs($child->active_route))

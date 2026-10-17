@@ -8,6 +8,11 @@ use Illuminate\Support\Facades\Route;
 Route::redirect('/', '/home');
 
 Route::middleware('auth')->group(function () {
+    Route::post('/session/keep-alive', fn () => response()->noContent())
+        ->name('session.keep-alive');
+    Route::get('/session/status', fn () => response()->noContent())
+        ->name('session.status');
+
     Route::get('/media/{path}', PublicMediaController::class)
         ->where('path', '.*')
         ->name('media.public');
@@ -26,6 +31,9 @@ Route::middleware('auth')->group(function () {
     Route::view('/ticket-escalations', 'ticket-escalations')
         ->middleware(['can:ticket_escalations.view', 'sidebar.active:ticket-escalations'])
         ->name('ticket-escalations');
+    Route::view('/snapshots', 'snapshots')
+        ->middleware(['can:snapshots.view', 'sidebar.active:snapshots'])
+        ->name('snapshots');
     Route::view('/extensions/browser', 'browser-extension')
         ->middleware(['can:browser_extensions.view', 'sidebar.active:browser-extension'])
         ->name('browser-extension');

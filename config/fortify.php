@@ -162,7 +162,7 @@ return [
     */
 
     'features' => [
-        Features::registration(),
+        // Las cuentas de Support+ son administradas e invitadas; no hay registro público.
         Features::resetPasswords(),
         // Features::emailVerification(),
         Features::updateProfileInformation(),

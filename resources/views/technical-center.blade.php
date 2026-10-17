@@ -4,6 +4,6 @@
 
 @section('content')
     <div data-module-type="profile">
-        <livewire:technical-center />
+        <livewire:iam-security-center />
     </div>
 @endsection

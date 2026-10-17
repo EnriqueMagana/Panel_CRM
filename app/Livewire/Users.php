@@ -4,6 +4,8 @@ namespace App\Livewire;
 
 use App\Models\User;
 use App\Notifications\UserInvitationNotification;
+use App\Services\IamAuditLogger;
+use App\Traits\RequiresRecentAuthentication;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password as PasswordBroker;
@@ -16,7 +18,7 @@ use Spatie\Permission\Models\Role as SpatieRole;
 
 class Users extends Component
 {
-    use WithPagination;
+    use RequiresRecentAuthentication, WithPagination;
 
     public string $search = '';
 
@@ -50,12 +52,11 @@ class Users extends Component
 
     public string $roleFilter = '';
 
-    public string $sortColumn = 'username';
+    public string $sortColumn = 'name';
 
     public string $sortDirection = 'asc';
 
     public array $visibleColumns = [
-        'username' => true,
         'name' => true,
         'email' => true,
         'phone_number' => true,
@@ -185,22 +186,31 @@ class Users extends Component
         session()->flash('users-status', "Se reenvió la invitación a {$user->email}.");
     }
 
-    public function toggleUserStatus(int $userId): void
+    public function toggleUserStatus(int $userId, IamAuditLogger $audit): void
     {
-        $this->authorize('users.update');
+        $this->authorize('users.suspend');
 
         $user = User::findOrFail($userId);
         abort_unless($user->id !== Auth::id(), 403);
         $this->ensureTargetManageable($user);
         abort_if($user->status === 'invited', 403);
+        if (! $this->requireRecentAuthentication()) {
+            return;
+        }
 
         $user->forceFill(['status' => $user->status === 'suspended' ? 'active' : 'suspended'])->save();
+        $audit->record(
+            $user->status === 'suspended' ? 'user.suspended' : 'user.reactivated',
+            $user->status === 'suspended' ? 'Usuario suspendido.' : 'Usuario reactivado.',
+            Auth::user(),
+            $user,
+        );
         session()->flash('users-status', $user->status === 'suspended' ? 'Usuario suspendido.' : 'Usuario reactivado.');
     }
 
     public function sortBy(string $column): void
     {
-        abort_unless(in_array($column, ['username', 'name', 'email', 'phone_number', 'status', 'created_at'], true), 422);
+        abort_unless(in_array($column, ['name', 'email', 'phone_number', 'status', 'created_at'], true), 422);
 
         $this->sortDirection = $this->sortColumn === $column && $this->sortDirection === 'asc' ? 'desc' : 'asc';
         $this->sortColumn = $column;
@@ -216,9 +226,12 @@ class Users extends Component
             : array_values(array_unique([...$this->selectedUsers, ...$userIds]));
     }
 
-    public function deleteSelectedUsers(): void
+    public function deleteSelectedUsers(IamAuditLogger $audit): void
     {
         $this->authorize('users.delete');
+        if (! $this->requireRecentAuthentication()) {
+            return;
+        }
 
         $users = User::query()->whereIn('id', $this->selectedUsers)->get();
         foreach ($users as $user) {
@@ -226,6 +239,7 @@ class Users extends Component
             $this->ensureTargetManageable($user);
             $user->syncPermissions([]);
             $user->syncRoles([]);
+            $audit->record('user.deleted', 'Usuario eliminado.', Auth::user(), $user, ['email' => $user->email]);
             $user->delete();
         }
 
@@ -233,7 +247,7 @@ class Users extends Component
         session()->flash('users-status', 'Usuarios seleccionados eliminados.');
     }
 
-    public function saveUser(): void
+    public function saveUser(IamAuditLogger $audit): void
     {
         $isEditing = $this->editingUserId !== null;
         $this->authorize($isEditing ? 'users.update' : 'users.create');
@@ -249,7 +263,7 @@ class Users extends Component
             'username' => ['required', 'string', 'max:100', Rule::unique('users', 'username')->ignore($this->editingUserId)],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->editingUserId)],
             'phoneNumber' => ['nullable', 'string', 'max:32'],
-            'password' => [$isEditing ? 'nullable' : 'required', 'string', Password::min(8)],
+            'password' => [$isEditing ? 'nullable' : 'required', 'string', Password::default()],
             'passwordConfirmation' => [$isEditing ? 'nullable' : 'required', 'same:password'],
         ];
 
@@ -261,6 +275,14 @@ class Users extends Component
 
         $validated = $this->validate($rules);
         $roleIds = array_map('intval', $validated['selectedRoles'] ?? []);
+        $currentRoleIds = $target?->roles->modelKeys() ?? [];
+        $rolesChanged = $canAssignRoles
+            && collect($currentRoleIds)->sort()->values()->all() !== collect($roleIds)->sort()->values()->all();
+        if ($rolesChanged) {
+            if (! $this->requireRecentAuthentication()) {
+                return;
+            }
+        }
         $superAdminRole = SpatieRole::query()
             ->where('guard_name', 'web')
             ->where('name', 'Super Admin')
@@ -282,6 +304,7 @@ class Users extends Component
 
         if ($validated['password'] !== null && $validated['password'] !== '') {
             $updates['password'] = $validated['password'];
+            $updates['must_change_password'] = true;
         }
 
         $user = $target
@@ -295,20 +318,30 @@ class Users extends Component
                 ->get());
         }
 
+        if ($rolesChanged) {
+            $audit->record('user.roles_changed', 'Roles de usuario actualizados.', Auth::user(), $user, [
+                'role_ids' => $roleIds,
+            ]);
+        }
+
         $this->closeForm();
         session()->flash('users-status', $isEditing ? 'Usuario actualizado.' : 'Usuario creado.');
     }
 
-    public function deleteUser(int $userId): void
+    public function deleteUser(int $userId, IamAuditLogger $audit): void
     {
         $this->authorize('users.delete');
 
         $user = User::findOrFail($userId);
         abort_unless($user->id !== Auth::id(), 403);
         $this->ensureTargetManageable($user);
+        if (! $this->requireRecentAuthentication()) {
+            return;
+        }
 
         $user->syncPermissions([]);
         $user->syncRoles([]);
+        $audit->record('user.deleted', 'Usuario eliminado.', Auth::user(), $user, ['email' => $user->email]);
         $user->delete();
 
         session()->flash('users-status', 'Usuario eliminado.');

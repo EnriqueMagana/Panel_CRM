@@ -21,11 +21,138 @@ const blobatarUriCache = new Map();
 const blobatarExpressions = { happy, idle, love, shy, sleepy, smug, surprised, thinking, unsure, wink };
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 let confirmAction = null;
-let chatRefreshTimer = null;
-let chatRefreshInFlight = false;
 let draggedPinnedPresetMessageId = null;
 const snapshots = new Map();
 let snapshotSequence = 0;
+let sessionWarningTimer = null;
+let sessionLogoutTimer = null;
+let sessionHooksRegistered = false;
+let sessionValidationPromise = null;
+
+const sessionTimeoutDialog = () => document.querySelector('[data-session-timeout-dialog]');
+
+const redirectToLogin = () => {
+	const loginUrl = document.body?.dataset.loginUrl || '/login';
+	window.location.replace(loginUrl);
+};
+
+const validateRestoredSession = async () => {
+	if (!document.body?.matches('[data-snippetdesk-app]')) return;
+	if (sessionValidationPromise) return sessionValidationPromise;
+
+	document.documentElement.classList.add('session-revalidating');
+	const statusUrl = document.body.dataset.sessionStatusUrl || '/session/status';
+
+	sessionValidationPromise = fetch(statusUrl, {
+		method: 'GET',
+		credentials: 'same-origin',
+		cache: 'no-store',
+		headers: {
+			Accept: 'application/json',
+			'X-Requested-With': 'XMLHttpRequest',
+		},
+	})
+		.then((response) => {
+			if (!response.ok || response.redirected) {
+				redirectToLogin();
+				return;
+			}
+
+			document.documentElement.classList.remove('session-revalidating');
+		})
+		.catch(redirectToLogin)
+		.finally(() => {
+			sessionValidationPromise = null;
+		});
+
+	return sessionValidationPromise;
+};
+
+const submitSessionLogout = () => {
+	document.querySelector('[data-session-timeout-logout]')?.requestSubmit();
+};
+
+const closeSessionTimeoutWarning = () => {
+	const dialog = sessionTimeoutDialog();
+	if (dialog instanceof HTMLDialogElement && dialog.open) dialog.close();
+};
+
+const showSessionTimeoutWarning = (warningSeconds) => {
+	const dialog = sessionTimeoutDialog();
+	if (!(dialog instanceof HTMLDialogElement)) return;
+	if (!dialog.open) dialog.showModal();
+
+	const minutes = Math.floor(warningSeconds / 60);
+	const seconds = String(warningSeconds % 60).padStart(2, '0');
+	const output = dialog.querySelector('[data-session-countdown]');
+	if (output) output.textContent = `${minutes}:${seconds}`;
+};
+
+const resetSessionTimeout = () => {
+	const idleSeconds = Number(document.body?.dataset.sessionIdleTimeout || 0);
+	if (!Number.isFinite(idleSeconds) || idleSeconds <= 0) return;
+	const configuredWarning = Number(document.body?.dataset.sessionWarning || 120);
+	const warningSeconds = Math.min(Math.max(15, configuredWarning), Math.max(15, idleSeconds - 1));
+
+	window.clearTimeout(sessionWarningTimer);
+	window.clearTimeout(sessionLogoutTimer);
+	closeSessionTimeoutWarning();
+	sessionWarningTimer = window.setTimeout(
+		() => showSessionTimeoutWarning(warningSeconds),
+		Math.max(0, idleSeconds - warningSeconds) * 1_000,
+	);
+	sessionLogoutTimer = window.setTimeout(submitSessionLogout, idleSeconds * 1_000);
+};
+
+const continueSession = async (button) => {
+	button.disabled = true;
+	try {
+		const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+		const response = await fetch('/session/keep-alive', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'X-CSRF-TOKEN': token, Accept: 'application/json' },
+		});
+		if (!response.ok) {
+			submitSessionLogout();
+			return;
+		}
+		resetSessionTimeout();
+	} finally {
+		button.disabled = false;
+	}
+};
+
+const registerSessionTimeoutHooks = () => {
+	if (sessionHooksRegistered || !window.Livewire?.hook) return;
+	sessionHooksRegistered = true;
+	window.Livewire.hook('request', ({ succeed }) => {
+		succeed(() => resetSessionTimeout());
+	});
+};
+
+document.addEventListener('livewire:init', registerSessionTimeoutHooks);
+
+window.addEventListener('pageshow', (event) => {
+	const navigation = window.performance.getEntriesByType('navigation')[0];
+	if (event.persisted || navigation?.type === 'back_forward') validateRestoredSession();
+});
+
+window.addEventListener('popstate', () => {
+	window.queueMicrotask(validateRestoredSession);
+});
+
+document.addEventListener('click', (event) => {
+	const continueButton = event.target instanceof Element ? event.target.closest('[data-session-continue]') : null;
+	if (continueButton instanceof HTMLButtonElement) {
+		continueSession(continueButton);
+		return;
+	}
+
+	if (event.target instanceof Element && event.target.closest('[data-session-logout-now]')) {
+		submitSessionLogout();
+	}
+});
 
 const renderBlobatar = (image) => {
 	const seed = image.dataset.blobatarSeed;
@@ -418,37 +545,6 @@ const scrollChatToBottom = () => {
 	});
 };
 
-const scheduleChatRefresh = () => {
-	if (chatRefreshTimer) window.clearTimeout(chatRefreshTimer);
-
-	const workspace = document.querySelector('[data-chat-workspace][wire\\:id]');
-	if (!workspace) {
-		chatRefreshTimer = null;
-		return;
-	}
-
-	chatRefreshTimer = window.setTimeout(async () => {
-		if (document.hidden || chatRefreshInFlight) {
-			scheduleChatRefresh();
-			return;
-		}
-
-		const wire = window.Livewire?.find(workspace.getAttribute('wire:id'));
-		if (typeof wire?.$call !== 'function') {
-			scheduleChatRefresh();
-			return;
-		}
-
-		chatRefreshInFlight = true;
-		try {
-			await wire.$call('refreshConversation');
-		} finally {
-			chatRefreshInFlight = false;
-			scheduleChatRefresh();
-		}
-	}, 8_000);
-};
-
 const initPage = () => {
 	renderBlobatars(document);
 	initAvatarPhotos(document);
@@ -462,14 +558,14 @@ const initPage = () => {
 	syncPreferenceRadios();
 	updateSidebarButton();
 	scrollChatToBottom();
-	scheduleChatRefresh();
+	hydrateSnapshotSurfaces();
+	registerSessionTimeoutHooks();
+	resetSessionTimeout();
 };
 
 document.addEventListener('click', (event) => {
 	const target = event.target instanceof Element ? event.target : null;
 	if (!target) return;
-	if (target.closest('[data-chat-workspace]')) scheduleChatRefresh();
-
 	const sidebarButton = target.closest('[data-sidebar-toggle]');
 	if (sidebarButton) {
 		applyLayout(root.dataset.layout === 'default' ? 'compact' : 'default');
@@ -584,12 +680,6 @@ document.addEventListener('click', (event) => {
 		if (modal.dataset.modalDismissible === 'false') return;
 		if (modal.matches('[data-theme-settings], [data-search-dialog]')) modal.close();
 		else modal.querySelector('[data-modal-close-action]')?.click();
-	}
-});
-
-document.addEventListener('input', (event) => {
-	if (event.target instanceof Element && event.target.closest('[data-chat-workspace]')) {
-		scheduleChatRefresh();
 	}
 });
 
@@ -723,6 +813,7 @@ document.addEventListener('load', (event) => {
 }, true);
 
 const snapshotDialog = () => document.querySelector('[data-snapshot-dialog]');
+const snapshotSurfaces = () => [...document.querySelectorAll('[data-snapshot-workspace]')];
 
 let productivityFabAnimationTimer = null;
 let productivityFabReactionTimer = null;
@@ -855,19 +946,21 @@ const downloadSnapshotBlob = (blob, name) => {
 };
 
 const updateSnapshotSummary = () => {
-	const dialog = snapshotDialog();
 	const count = snapshots.size;
-	const countLabel = dialog?.querySelector('[data-snapshot-count]');
-	if (countLabel) countLabel.textContent = `${count} ${count === 1 ? 'imagen' : 'imágenes'}`;
-	dialog?.querySelector('[data-snapshot-empty]')?.classList.toggle('hidden', count > 0);
-	dialog?.querySelectorAll('[data-snapshot-clear], [data-snapshot-zip]').forEach((button) => {
-		button.disabled = count === 0;
+	snapshotSurfaces().forEach((surface) => {
+		const countLabel = surface.querySelector('[data-snapshot-count]');
+		if (countLabel) countLabel.textContent = `${count} ${count === 1 ? 'imagen' : 'imágenes'}`;
+		surface.querySelector('[data-snapshot-empty]')?.classList.toggle('hidden', count > 0);
+		surface.querySelectorAll('[data-snapshot-clear], [data-snapshot-zip]').forEach((button) => {
+			button.disabled = count === 0;
+		});
 	});
 };
 
-const renderSnapshot = (snapshot) => {
-	const list = snapshotDialog()?.querySelector('[data-snapshot-list]');
+const renderSnapshotInSurface = (surface, snapshot) => {
+	const list = surface.querySelector('[data-snapshot-list]');
 	if (!list) return;
+	if (list.querySelector(`[data-snapshot-id="${CSS.escape(snapshot.id)}"]`)) return;
 
 	const card = document.createElement('article');
 	card.dataset.snapshotId = snapshot.id;
@@ -922,6 +1015,16 @@ const renderSnapshot = (snapshot) => {
 	list.appendChild(card);
 };
 
+const renderSnapshot = (snapshot) => {
+	snapshotSurfaces().forEach((surface) => renderSnapshotInSurface(surface, snapshot));
+};
+
+const hydrateSnapshotSurfaces = () => {
+	snapshotSurfaces().forEach((surface) => surface.querySelector('[data-snapshot-list]')?.replaceChildren());
+	snapshots.forEach(renderSnapshot);
+	updateSnapshotSummary();
+};
+
 const addSnapshots = (files) => {
 	[...files].filter((file) => file.type.startsWith('image/')).forEach((file) => {
 		snapshotSequence += 1;
@@ -943,14 +1046,16 @@ const removeSnapshot = (id) => {
 	if (!snapshot) return;
 	URL.revokeObjectURL(snapshot.url);
 	snapshots.delete(id);
-	snapshotDialog()?.querySelector(`[data-snapshot-id="${CSS.escape(id)}"]`)?.remove();
+	snapshotSurfaces().forEach((surface) => {
+		surface.querySelector(`[data-snapshot-id="${CSS.escape(id)}"]`)?.remove();
+	});
 	updateSnapshotSummary();
 };
 
 const clearSnapshots = () => {
 	snapshots.forEach((snapshot) => URL.revokeObjectURL(snapshot.url));
 	snapshots.clear();
-	snapshotDialog()?.querySelector('[data-snapshot-list]')?.replaceChildren();
+	snapshotSurfaces().forEach((surface) => surface.querySelector('[data-snapshot-list]')?.replaceChildren());
 	updateSnapshotSummary();
 };
 
@@ -1061,6 +1166,7 @@ document.addEventListener('click', (event) => {
 		closeProductivityFab();
 		const dialog = snapshotDialog();
 		if (dialog instanceof HTMLDialogElement && !dialog.open) dialog.showModal();
+		hydrateSnapshotSurfaces();
 		requestAnimationFrame(() => dialog?.querySelector('[data-snapshot-dropzone]')?.focus());
 		return;
 	}
@@ -1119,12 +1225,17 @@ document.addEventListener('change', (event) => {
 document.addEventListener('input', (event) => {
 	if (!event.target.matches('[data-snapshot-name]')) return;
 	const snapshot = snapshots.get(event.target.dataset.snapshotName);
-	if (snapshot) snapshot.name = event.target.value;
+	if (!snapshot) return;
+	snapshot.name = event.target.value;
+	document.querySelectorAll(`[data-snapshot-name="${CSS.escape(snapshot.id)}"]`).forEach((input) => {
+		if (input !== event.target) input.value = snapshot.name;
+	});
 });
 
 document.addEventListener('paste', (event) => {
 	const dialog = snapshotDialog();
-	if (!(dialog instanceof HTMLDialogElement) || !dialog.open) return;
+	const dialogOpen = dialog instanceof HTMLDialogElement && dialog.open;
+	if (!dialogOpen && !document.querySelector('[data-snapshot-page]')) return;
 	const files = [...(event.clipboardData?.items || [])]
 		.filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
 		.map((item) => item.getAsFile())
@@ -1237,7 +1348,7 @@ const writeClipboardText = async (text) => {
 
 const replacePresetVariable = (message, variable, value) => {
 	const escapedVariable = variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	return message.replace(new RegExp(`\\{\\{\\s*${escapedVariable}\\s*\\}\\}`, 'gu'), value);
+	return message.replace(new RegExp(`(?:\\{\\{\\s*${escapedVariable}\\s*\\}\\}|\\[\\s*${escapedVariable}\\s*\\])`, 'gu'), value);
 };
 
 const automaticPresetValues = (card) => {

@@ -87,6 +87,7 @@ class PresetMessagePreferenceService
 
     public function togglePin(User $user, PresetMessage $message): void
     {
+        abort_unless($message->created_by === $user->id, 403);
         $this->ensureVisibleTo($user, $message);
 
         DB::transaction(function () use ($user, $message): void {
@@ -128,6 +129,7 @@ class PresetMessagePreferenceService
     public function movePinned(User $user, PresetMessage $message, PresetMessage $target, string $direction): void
     {
         abort_unless(in_array($direction, ['up', 'down'], true), 422);
+        abort_unless($message->created_by === $user->id && $target->created_by === $user->id, 403);
 
         DB::transaction(function () use ($user, $message, $target): void {
             $states = DB::table('preset_message_user')
@@ -150,6 +152,10 @@ class PresetMessagePreferenceService
     public function reorderPinned(User $user, array $messageIds): void
     {
         $messageIds = array_values(array_unique(array_map('intval', $messageIds)));
+        abort_unless(PresetMessage::query()
+            ->whereIn('id', $messageIds)
+            ->where('created_by', $user->id)
+            ->count() === count($messageIds), 403);
 
         DB::transaction(function () use ($user, $messageIds): void {
             $states = DB::table('preset_message_user')

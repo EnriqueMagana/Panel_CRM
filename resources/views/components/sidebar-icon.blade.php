@@ -66,6 +66,17 @@
             <path d="M9 7.5v12M13 11h4M13 15h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
         @break
 
+        @case('camera')
+            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H9l1.2-1.5h3.6L15 6h2.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            <circle cx="12" cy="12.5" r="3" stroke="currentColor" stroke-width="1.6" />
+        @break
+
+        @case('operations')
+            <rect x="3.5" y="4" width="17" height="6" rx="1.5" stroke="currentColor" stroke-width="1.6" />
+            <rect x="3.5" y="14" width="17" height="6" rx="1.5" stroke="currentColor" stroke-width="1.6" />
+            <path d="M7 7h.01M7 17h.01M10 7h7M10 17h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        @break
+
         @case('settings')
             <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />
             <path

@@ -2,6 +2,8 @@
 
 namespace App\Livewire;
 
+use App\Services\IamAuditLogger;
+use App\Traits\RequiresRecentAuthentication;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
@@ -10,6 +12,8 @@ use Spatie\Permission\Models\Role as SpatieRole;
 
 class Roles extends Component
 {
+    use RequiresRecentAuthentication;
+
     public bool $formOpen = false;
 
     public ?int $editingRoleId = null;
@@ -42,7 +46,7 @@ class Roles extends Component
         $this->formOpen = true;
     }
 
-    public function saveRole(): void
+    public function saveRole(IamAuditLogger $audit): void
     {
         $isEditing = $this->editingRoleId !== null;
         $this->authorize($isEditing ? 'roles.update' : 'roles.create');
@@ -68,6 +72,13 @@ class Roles extends Component
             'selectedPermissions.*' => ['string', Rule::in($availablePermissions)],
         ]);
 
+        if ($isEditing || ($validated['selectedPermissions'] ?? []) !== []) {
+            $this->authorize('roles.manage_permissions');
+            if (! $this->requireRecentAuthentication()) {
+                return;
+            }
+        }
+
         $role ??= SpatieRole::create(['name' => $validated['name'], 'guard_name' => 'web']);
         if ($isEditing) {
             $role->name = $validated['name'];
@@ -86,16 +97,27 @@ class Roles extends Component
             ->whereIn('name', $permissionNames)
             ->get());
 
+        $audit->record(
+            $isEditing ? 'role.updated' : 'role.created',
+            $isEditing ? 'Rol y permisos actualizados.' : 'Rol creado.',
+            Auth::user(),
+            null,
+            ['role' => $role->name, 'permissions' => $permissionNames->values()->all()],
+        );
+
         $this->closeForm();
         session()->flash('roles-status', $isEditing ? 'Rol actualizado.' : 'Rol creado.');
     }
 
-    public function deleteRole(int $roleId): void
+    public function deleteRole(int $roleId, IamAuditLogger $audit): void
     {
         $this->authorize('roles.delete');
 
         $role = SpatieRole::query()->findOrFail($roleId);
         abort_if($role->name === 'Super Admin', 403);
+        if (! $this->requireRecentAuthentication()) {
+            return;
+        }
 
         if ($role->users()->exists()) {
             $this->addError('deleteRole', 'No puedes eliminar un rol que está asignado a usuarios.');
@@ -103,7 +125,9 @@ class Roles extends Component
             return;
         }
 
+        $roleName = $role->name;
         $role->delete();
+        $audit->record('role.deleted', 'Rol eliminado.', Auth::user(), null, ['role' => $roleName]);
         session()->flash('roles-status', 'Rol eliminado.');
     }
 

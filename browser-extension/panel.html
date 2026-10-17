@@ -19,7 +19,30 @@
     </div>
     <p>Usa una dirección permitida por tu organización.</p>
   </form>
-  <iframe id="snippetdesk" title="Snippetdesk"></iframe>
+  <section class="target-card" aria-labelledby="target-title">
+    <div class="target-heading">
+      <div>
+        <span class="eyebrow">Destino de pegado</span>
+        <strong id="target-title">Campo de destino</strong>
+      </div>
+      <span id="target-indicator" class="indicator" aria-hidden="true"></span>
+    </div>
+    <p id="target-description" class="target-description">Selecciona el input o editor donde deben insertarse los mensajes.</p>
+    <p id="target-status" class="status" role="status" aria-live="polite"></p>
+    <div class="target-actions">
+      <button id="select-target" type="button" class="primary">Seleccionar campo</button>
+      <button id="verify-target" type="button" hidden>Verificar</button>
+      <button id="forget-target" type="button" class="danger" hidden>Olvidar</button>
+    </div>
+    <p class="help">En cualquier página web, pulsa “Seleccionar campo” y después haz clic sobre el input, textarea o editor que quieras usar.</p>
+  </section>
+  <div class="launch-row">
+    <button id="open-app" type="button">Abrir Snippetdesk en una pestaña</button>
+  </div>
+  <section class="panel-note">
+    <strong>¿Por qué se abre en otra pestaña?</strong>
+    <p>El navegador protege las sesiones autenticadas y puede bloquearlas dentro de un panel incrustado. El campo seleccionado seguirá conectado aunque Snippetdesk esté en otra pestaña.</p>
+  </section>
   <script src="panel.js"></script>
 </body>
 </html>

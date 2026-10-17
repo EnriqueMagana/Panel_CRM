@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Actions\Fortify\UpdateUserPassword;
 use App\Models\User;
+use App\Services\IamAuditLogger;
 use App\Traits\ProcessesResponsiveImages;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -199,18 +200,20 @@ class ProfileSecurity extends Component
         $this->reset('twoFactorPassword');
     }
 
-    public function confirmTwoFactor(ConfirmTwoFactorAuthentication $confirm): void
+    public function confirmTwoFactor(ConfirmTwoFactorAuthentication $confirm, IamAuditLogger $audit): void
     {
         $this->validate([
             'code' => ['required', 'digits:6'],
         ]);
 
-        $confirm(Auth::user(), $this->code);
+        $user = Auth::user();
+        $confirm($user, $this->code);
+        $audit->record('mfa.enabled', 'Verificación en dos pasos activada.', $user, $user);
         $this->reset('code');
         session()->flash('profile-status', 'La verificación en dos pasos quedó activada.');
     }
 
-    public function regenerateRecoveryCodes(GenerateNewRecoveryCodes $generate): void
+    public function regenerateRecoveryCodes(GenerateNewRecoveryCodes $generate, IamAuditLogger $audit): void
     {
         $this->validate([
             'twoFactorPassword' => ['required', 'current_password:web'],
@@ -220,12 +223,13 @@ class ProfileSecurity extends Component
         abort_unless($user->hasEnabledTwoFactorAuthentication(), 403);
 
         $generate($user);
+        $audit->record('mfa.recovery_codes_regenerated', 'Códigos de recuperación regenerados.', $user, $user);
         $this->recoveryCodes = $user->refresh()->recoveryCodes();
         $this->reset('twoFactorPassword');
         session()->flash('profile-status', 'Se generaron nuevos códigos de recuperación.');
     }
 
-    public function disableTwoFactor(DisableTwoFactorAuthentication $disable): void
+    public function disableTwoFactor(DisableTwoFactorAuthentication $disable, IamAuditLogger $audit): void
     {
         $this->validate([
             'twoFactorPassword' => ['required', 'current_password:web'],
@@ -235,6 +239,7 @@ class ProfileSecurity extends Component
         abort_unless($user->hasEnabledTwoFactorAuthentication(), 403);
 
         $disable($user);
+        $audit->record('mfa.disabled', 'Verificación en dos pasos desactivada.', $user, $user);
         $this->recoveryCodes = [];
         $this->reset('twoFactorPassword');
         session()->flash('profile-status', 'La verificación en dos pasos quedó desactivada.');

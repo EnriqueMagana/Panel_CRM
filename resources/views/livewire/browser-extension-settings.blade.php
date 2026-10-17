@@ -113,6 +113,7 @@
                     ['Activa modo desarrollador', 'Usa el interruptor ubicado en la parte superior.'],
                     ['Carga la carpeta', 'Pulsa “Cargar descomprimida” y selecciona la carpeta extraída.'],
                     ['Abre el panel lateral', 'Pulsa el icono de la extensión desde la barra del navegador.'],
+                    ['Selecciona el campo', 'En cualquier página web, pulsa “Seleccionar campo” y haz clic en el input, textarea o editor deseado.'],
                     ['Verifica la conexión', 'Regresa aquí y utiliza el botón Verificar extensión.'],
                 ] as $index => [$title, $description])
                     <li class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3">

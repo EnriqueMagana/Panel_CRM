@@ -5,6 +5,7 @@
     'hidden' => false,
     'title' => null,
     'extensionConfigured' => false,
+    'importedSourceIds' => [],
 ])
 
 @if ($messages->isNotEmpty())
@@ -21,6 +22,7 @@
             @foreach ($messages as $index => $presetMessage)
                 <x-preset-messages.message-card :message="$presetMessage" :library="$library" :pinned="$pinned"
                     :extension-configured="$extensionConfigured"
+                    :imported="in_array($presetMessage->id, $importedSourceIds, true)"
                     :hidden="$hidden" :can-move-up="$pinned && $index > 0"
                     :can-move-down="$pinned && $index < $messages->count() - 1"
                     :move-up-id="$pinned && $index > 0 ? $messages[$index - 1]->id : null"

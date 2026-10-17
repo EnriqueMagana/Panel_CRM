@@ -15,10 +15,13 @@ class SidebarItemSeeder extends Seeder
             ['key' => 'users', 'parent' => 'administration', 'type' => 'link', 'label' => 'Usuarios', 'icon' => 'users', 'route_name' => 'users', 'permission_name' => 'users.view', 'sort_order' => 10],
             ['key' => 'roles', 'parent' => 'administration', 'type' => 'link', 'label' => 'Roles', 'icon' => 'shield', 'route_name' => 'roles', 'permission_name' => 'roles.view', 'sort_order' => 20],
             ['key' => 'navigation', 'parent' => 'administration', 'type' => 'link', 'label' => 'Navegación', 'icon' => 'menu', 'route_name' => 'navigation', 'permission_name' => 'navigation.view', 'sort_order' => 30],
-            ['key' => 'technical-center', 'parent' => 'administration', 'type' => 'link', 'label' => 'Centro técnico', 'icon' => 'settings', 'route_name' => 'technical-center', 'permission_name' => 'technical_center.view', 'sort_order' => 40],
             ['key' => 'chat', 'parent' => null, 'type' => 'link', 'label' => 'Chats', 'icon' => 'chat', 'route_name' => 'chats', 'sort_order' => 25],
-            ['key' => 'preset-messages', 'parent' => null, 'type' => 'link', 'label' => 'Mensajes predeterminados', 'icon' => 'messages', 'route_name' => 'preset-messages', 'permission_name' => 'preset_messages.view', 'sort_order' => 27],
-            ['key' => 'ticket-escalations', 'parent' => null, 'type' => 'link', 'label' => 'Escalado de tickets', 'icon' => 'ticket', 'route_name' => 'ticket-escalations', 'permission_name' => 'ticket_escalations.view', 'sort_order' => 28],
+            ['key' => 'operations', 'parent' => null, 'type' => 'group', 'label' => 'Operación', 'icon' => 'operations', 'sort_order' => 27],
+            ['key' => 'preset-messages', 'parent' => 'operations', 'type' => 'link', 'label' => 'Mensajes predeterminados', 'icon' => 'messages', 'route_name' => 'preset-messages', 'permission_name' => 'preset_messages.view', 'sort_order' => 10],
+            ['key' => 'ticket-escalations', 'parent' => 'operations', 'type' => 'link', 'label' => 'Escalado de tickets', 'icon' => 'ticket', 'route_name' => 'ticket-escalations', 'permission_name' => 'ticket_escalations.view', 'sort_order' => 20],
+            ['key' => 'snapshots', 'parent' => 'operations', 'type' => 'link', 'label' => 'Snapshots', 'icon' => 'camera', 'route_name' => 'snapshots', 'permission_name' => 'snapshots.view', 'sort_order' => 30],
+            ['key' => 'iam', 'parent' => null, 'type' => 'group', 'label' => 'IAM', 'icon' => 'shield', 'sort_order' => 28],
+            ['key' => 'technical-center', 'parent' => 'iam', 'type' => 'link', 'label' => 'Herramientas IAM', 'icon' => 'shield', 'route_name' => 'technical-center', 'permission_name' => 'technical_center.view', 'sort_order' => 10],
             ['key' => 'extensions', 'parent' => null, 'type' => 'group', 'label' => 'Extensiones', 'icon' => 'extension', 'sort_order' => 29],
             ['key' => 'browser-extension', 'parent' => 'extensions', 'type' => 'link', 'label' => 'Extensión del navegador', 'icon' => 'extension', 'route_name' => 'browser-extension', 'permission_name' => 'browser_extensions.view', 'sort_order' => 10],
             ['key' => 'account', 'parent' => null, 'type' => 'group', 'label' => 'Cuenta', 'icon' => 'user', 'sort_order' => 30],
@@ -32,7 +35,7 @@ class SidebarItemSeeder extends Seeder
         $ids = [];
         foreach ($items as $item) {
             $parentId = $item['parent'] ? $ids[$item['parent']] : null;
-            $record = SidebarItem::query()->firstOrNew(['label' => $item['label'], 'parent_id' => $parentId]);
+            $record = $this->findExistingRecord($item);
             $record->fill([
                 ...collect($item)->except(['key', 'parent'])->all(),
                 'parent_id' => $parentId,
@@ -41,5 +44,24 @@ class SidebarItemSeeder extends Seeder
             $record->save();
             $ids[$item['key']] = $record->id;
         }
+    }
+
+    private function findExistingRecord(array $item): SidebarItem
+    {
+        if ($item['type'] === 'link') {
+            return SidebarItem::query()->firstOrNew([
+                'route_name' => $item['route_name'],
+                'route_fragment' => $item['route_fragment'] ?? null,
+            ]);
+        }
+
+        if ($item['type'] === 'action') {
+            return SidebarItem::query()->firstOrNew(['action_key' => $item['action_key']]);
+        }
+
+        return SidebarItem::query()->firstOrNew([
+            'type' => 'group',
+            'label' => $item['label'],
+        ]);
     }
 }

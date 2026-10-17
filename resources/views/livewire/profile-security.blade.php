@@ -4,6 +4,13 @@
 @endphp
 
 <div class="space-y-8">
+    @if ($user->must_change_password)
+        <div role="alert" class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-sm text-amber-800 dark:text-amber-200">
+            <p class="font-semibold">Debes cambiar tu contraseña</p>
+            <p class="mt-1 leading-6">Tu cuenta fue importada o recibió una contraseña temporal. Establece una contraseña personal para desbloquear el resto de Support+.</p>
+            <a href="#password-heading" class="mt-2 inline-flex font-semibold underline underline-offset-4">Ir a cambiar contraseña</a>
+        </div>
+    @endif
     @if (session('profile-status'))
         <div role="status" class="rounded-md border border-border bg-background px-4 py-3 text-sm" aria-live="polite">
             {{ session('profile-status') }}

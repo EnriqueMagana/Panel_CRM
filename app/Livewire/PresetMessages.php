@@ -149,6 +149,7 @@ class PresetMessages extends Component
     public function selectLibrary(string $library): void
     {
         abort_unless(in_array($library, ['mine', 'global', 'hidden'], true), 404);
+        abort_if($library === 'global' && ! Auth::user()->can('preset_messages.view_global'), 403);
 
         $this->library = $library;
         $this->closeForm();
@@ -186,10 +187,11 @@ class PresetMessages extends Component
             'isActive' => ['boolean'],
         ], ['title.unique' => 'Ya existe un mensaje con este nombre.']);
 
+        $normalizedBody = PresetMessage::normalizeVariableSyntax(trim($validated['body']));
         $attributes = [
             'title' => trim($validated['title']),
-            'body' => trim($validated['body']),
-            'variables' => PresetMessage::extractVariables($validated['body']),
+            'body' => $normalizedBody,
+            'variables' => PresetMessage::extractVariables($normalizedBody),
             'is_active' => $validated['isActive'],
         ];
 
@@ -203,6 +205,38 @@ class PresetMessages extends Component
 
         $this->closeForm();
         session()->flash('preset-messages-status', $isEditing ? 'Mensaje actualizado.' : 'Mensaje creado.');
+    }
+
+    public function importMessage(int $messageId): void
+    {
+        $this->authorize('preset_messages.create');
+
+        $source = PresetMessage::query()
+            ->whereKey($messageId)
+            ->where('created_by', '!=', Auth::id())
+            ->where('is_active', true)
+            ->firstOrFail();
+
+        $normalizedBody = PresetMessage::normalizeVariableSyntax($source->body);
+        $imported = PresetMessage::query()->firstOrCreate(
+            [
+                'created_by' => Auth::id(),
+                'source_message_id' => $source->id,
+            ],
+            [
+                'title' => $this->availableImportedTitle($source->title),
+                'body' => $normalizedBody,
+                'variables' => PresetMessage::extractVariables($normalizedBody),
+                'is_active' => true,
+            ],
+        );
+
+        session()->flash(
+            'preset-messages-status',
+            $imported->wasRecentlyCreated
+                ? 'Mensaje importado a Mis mensajes.'
+                : 'Este mensaje ya está en Mis mensajes.',
+        );
     }
 
     public function deleteMessage(int $messageId): void
@@ -342,12 +376,12 @@ class PresetMessages extends Component
         $user = Auth::user();
         $baseQuery = $this->messagesQuery($user)
             ->with([
-                'creator:id,name',
+                'creator:id,name,email,profile_photo_path,avatar_seed,avatar_preferences',
                 'userStates' => fn ($query) => $query->whereKey($user->id),
             ]);
 
         $pinnedMessages = collect();
-        if ($this->library !== 'hidden') {
+        if ($this->library === 'mine') {
             $pinnedMessages = (clone $baseQuery)
                 ->whereHas('userStates', fn (Builder $query) => $query
                     ->whereKey($user->id)
@@ -365,11 +399,21 @@ class PresetMessages extends Component
         $messages = $baseQuery
             ->orderByDesc('is_active')
             ->orderBy('title')
-            ->paginate(12);
+            ->paginate($this->library === 'global' ? 30 : 12);
+
+        $importedSourceIds = $this->library === 'global'
+            ? PresetMessage::query()
+                ->where('created_by', $user->id)
+                ->whereNotNull('source_message_id')
+                ->pluck('source_message_id')
+                ->map(fn ($id) => (int) $id)
+                ->all()
+            : [];
 
         return view('livewire.preset-messages', [
             'messages' => $messages,
             'pinnedMessages' => $pinnedMessages,
+            'importedSourceIds' => $importedSourceIds,
             'automaticVariables' => PresetMessage::automaticVariables(),
             'calculatedVariables' => PresetMessage::calculatedVariables(),
             'presetThemes' => PresetMessagePreference::THEMES,
@@ -396,6 +440,8 @@ class PresetMessages extends Component
 
     private function messagesQuery(User $user): Builder
     {
+        abort_if($this->library === 'global' && ! $user->can('preset_messages.view_global'), 403);
+
         $query = PresetMessage::query();
 
         if ($this->library === 'hidden') {
@@ -422,6 +468,21 @@ class PresetMessages extends Component
             $term = '%'.trim($this->search).'%';
             $query->where(fn (Builder $query) => $query->where('title', 'like', $term)->orWhere('body', 'like', $term));
         });
+    }
+
+    private function availableImportedTitle(string $sourceTitle): string
+    {
+        $baseTitle = trim($sourceTitle);
+        $title = mb_substr($baseTitle, 0, 120);
+        $copyNumber = 1;
+
+        while (PresetMessage::query()->where('created_by', Auth::id())->where('title', $title)->exists()) {
+            $suffix = $copyNumber === 1 ? ' (copia)' : " (copia {$copyNumber})";
+            $title = mb_substr($baseTitle, 0, 120 - mb_strlen($suffix)).$suffix;
+            $copyNumber++;
+        }
+
+        return $title;
     }
 
     private function applyPreferences(PresetMessagePreference $preferences): void

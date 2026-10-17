@@ -17,6 +17,8 @@ return [
         'messages' => 'Mensajes',
         'extension' => 'Extensión',
         'ticket' => 'Ticket',
+        'camera' => 'Cámara',
+        'operations' => 'Operación',
     ],
     'actions' => [
         'search' => 'Abrir búsqueda',
@@ -26,6 +28,7 @@ return [
         'profile' => 'Perfil',
         'preset-messages' => 'Mensajes predeterminados',
         'ticket-escalations' => 'Escalado de tickets',
+        'snapshots' => 'Snapshots',
         'chats' => 'Chat',
         'users' => 'Usuarios',
         'roles' => 'Roles',

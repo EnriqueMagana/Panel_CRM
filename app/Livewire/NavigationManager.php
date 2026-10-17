@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\SidebarItem;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
 
@@ -30,14 +31,20 @@ class NavigationManager extends Component
 
     public string $activeRoute = '';
 
-    public int $sortOrder = 10;
-
     public bool $isActive = true;
 
     public function createItem(): void
     {
         $this->authorize('navigation.manage');
         $this->resetForm();
+        $this->formOpen = true;
+    }
+
+    public function createGroup(): void
+    {
+        $this->authorize('navigation.manage');
+        $this->resetForm();
+        $this->type = 'group';
         $this->formOpen = true;
     }
 
@@ -57,7 +64,6 @@ class NavigationManager extends Component
         $this->actionKey = $item->action_key ?? '';
         $this->permissionName = $item->permission_name ?? '';
         $this->activeRoute = $item->active_route ?? '';
-        $this->sortOrder = $item->sort_order;
         $this->isActive = $item->is_active;
         $this->formOpen = true;
     }
@@ -85,7 +91,6 @@ class NavigationManager extends Component
             'actionKey' => [$isAction ? 'required' : 'nullable', Rule::in(array_keys(config('sidebar.actions')))],
             'permissionName' => ['nullable', Rule::in($permissionNames)],
             'activeRoute' => ['nullable', 'string', 'max:100'],
-            'sortOrder' => ['required', 'integer', 'min:0', 'max:65535'],
             'isActive' => ['boolean'],
         ]);
 
@@ -101,17 +106,22 @@ class NavigationManager extends Component
             return;
         }
 
+        $parentId = $isGroup ? null : ($validated['parentId'] ?? null);
+        $sortOrder = $item && $item->parent_id === $parentId
+            ? $item->sort_order
+            : $this->nextSortOrder($parentId);
+
         $data = [
-            'parent_id' => $validated['parentId'],
+            'parent_id' => $parentId,
             'type' => $validated['type'],
             'label' => $validated['label'],
             'icon' => $validated['icon'] ?: null,
-            'route_name' => $validated['routeName'] ?: null,
-            'route_fragment' => $validated['routeFragment'] ?: null,
-            'action_key' => $validated['actionKey'] ?: null,
+            'route_name' => $isGroup || $isAction ? null : ($validated['routeName'] ?: null),
+            'route_fragment' => $isGroup || $isAction ? null : ($validated['routeFragment'] ?: null),
+            'action_key' => $isAction ? ($validated['actionKey'] ?: null) : null,
             'permission_name' => $validated['permissionName'] ?: null,
-            'active_route' => $validated['activeRoute'] ?: null,
-            'sort_order' => $validated['sortOrder'],
+            'active_route' => $isGroup || $isAction ? null : ($validated['activeRoute'] ?: null),
+            'sort_order' => $sortOrder,
             'is_active' => $validated['isActive'],
         ];
 
@@ -148,6 +158,16 @@ class NavigationManager extends Component
         );
     }
 
+    public function moveUp(int $itemId): void
+    {
+        $this->move($itemId, -1);
+    }
+
+    public function moveDown(int $itemId): void
+    {
+        $this->move($itemId, 1);
+    }
+
     public function cancelForm(): void
     {
         $this->closeForm();
@@ -155,16 +175,86 @@ class NavigationManager extends Component
 
     public function render()
     {
+        $user = auth()->user();
+        $canManage = $user->can('navigation.manage');
+        $items = SidebarItem::query()->with('children')->whereNull('parent_id')->ordered()->get();
+
+        if (! $canManage) {
+            $items = $items
+                ->map(function (SidebarItem $item) use ($user): SidebarItem {
+                    $item->setRelation(
+                        'children',
+                        $item->children->filter(
+                            fn (SidebarItem $child): bool => $child->is_active
+                                && $child->isPermittedTo($user, false),
+                        )->values(),
+                    );
+
+                    return $item;
+                })
+                ->filter(fn (SidebarItem $item): bool => $item->isAccessibleTo($user)
+                    && ($item->type !== 'group' || $item->children->isNotEmpty()))
+                ->values();
+        }
+
         return view('livewire.navigation-manager', [
-            'items' => SidebarItem::query()->with('children')->whereNull('parent_id')->ordered()->get(),
-            'groups' => SidebarItem::query()->where('type', 'group')->ordered()->get(),
+            'items' => $items,
+            'groups' => $canManage
+                ? SidebarItem::query()->where('type', 'group')->ordered()->get()
+                : collect(),
             'routes' => config('sidebar.routes'),
             'permissions' => collect(config('access.modules'))
                 ->flatMap(fn (array $module, string $key) => collect($module['permissions'])
                     ->keys()
                     ->mapWithKeys(fn (string $action) => ["{$key}.{$action}" => "{$module['label']}: {$action}"]))
                 ->all(),
+            'canManage' => $canManage,
         ]);
+    }
+
+    private function move(int $itemId, int $direction): void
+    {
+        $this->authorize('navigation.manage');
+
+        DB::transaction(function () use ($itemId, $direction): void {
+            $item = SidebarItem::query()->lockForUpdate()->findOrFail($itemId);
+            $siblings = SidebarItem::query()
+                ->where('parent_id', $item->parent_id)
+                ->lockForUpdate()
+                ->ordered()
+                ->get()
+                ->values();
+            $currentIndex = $siblings->search(fn (SidebarItem $sibling): bool => $sibling->is($item));
+
+            if ($currentIndex === false) {
+                return;
+            }
+
+            $targetIndex = $currentIndex + $direction;
+
+            if (! $siblings->has($targetIndex)) {
+                return;
+            }
+
+            $current = $siblings[$currentIndex];
+            $siblings[$currentIndex] = $siblings[$targetIndex];
+            $siblings[$targetIndex] = $current;
+
+            $siblings->each(
+                fn (SidebarItem $sibling, int $index) => $sibling->update(['sort_order' => ($index + 1) * 10]),
+            );
+        });
+
+        session()->flash('navigation-status', 'Orden actualizado.');
+    }
+
+    private function nextSortOrder(?int $parentId): int
+    {
+        $lastOrder = SidebarItem::query()
+            ->where('parent_id', $parentId)
+            ->max('sort_order');
+
+        return min(((int) $lastOrder) + 10, 65535);
     }
 
     private function closeForm(): void
@@ -181,11 +271,9 @@ class NavigationManager extends Component
             'actionKey',
             'permissionName',
             'activeRoute',
-            'sortOrder',
             'isActive',
         );
         $this->type = 'link';
-        $this->sortOrder = 10;
         $this->isActive = true;
         $this->resetValidation();
     }

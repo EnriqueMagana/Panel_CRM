@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Snippetdesk",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Abre Snippetdesk en un panel lateral y pega plantillas en el sistema de tickets.",
   "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
   "host_permissions": ["<all_urls>"],
@@ -21,8 +21,5 @@
       "all_frames": true,
       "run_at": "document_start"
     }
-  ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; frame-src http://* https://*;"
-  }
+  ]
 }

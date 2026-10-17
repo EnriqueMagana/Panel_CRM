@@ -31,6 +31,7 @@ class UserRoleManagementTest extends TestCase
         $this->get('/roles')->assertForbidden();
         $this->get('/navigation')->assertForbidden();
         $this->get('/technical-center')->assertForbidden();
+        $this->get('/snapshots')->assertForbidden();
     }
 
     public function test_sidebar_seeder_creates_ordered_parent_and_child_items(): void
@@ -45,12 +46,50 @@ class UserRoleManagementTest extends TestCase
             'permission_name' => 'users.view',
             'sort_order' => 10,
         ]);
+        $iam = SidebarItem::where('label', 'IAM')->firstOrFail();
+        $this->assertSame('group', $iam->type);
         $this->assertDatabaseHas('sidebar_items', [
-            'label' => 'Centro técnico',
-            'parent_id' => $administration->id,
+            'label' => 'Herramientas IAM',
+            'parent_id' => $iam->id,
             'permission_name' => 'technical_center.view',
-            'sort_order' => 40,
+            'sort_order' => 10,
         ]);
+
+        $operations = SidebarItem::where('label', 'Operación')->firstOrFail();
+        $this->assertDatabaseHas('sidebar_items', [
+            'label' => 'Mensajes predeterminados',
+            'parent_id' => $operations->id,
+            'sort_order' => 10,
+        ]);
+        $this->assertDatabaseHas('sidebar_items', [
+            'label' => 'Escalado de tickets',
+            'parent_id' => $operations->id,
+            'sort_order' => 20,
+        ]);
+        $this->assertDatabaseHas('sidebar_items', [
+            'label' => 'Snapshots',
+            'parent_id' => $operations->id,
+            'permission_name' => 'snapshots.view',
+            'sort_order' => 30,
+        ]);
+    }
+
+    public function test_snapshot_workspace_requires_permission_and_renders_its_tools(): void
+    {
+        $this->seed(SidebarItemSeeder::class);
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->get('/snapshots')->assertForbidden();
+
+        $user->givePermissionTo(Permission::findOrCreate('snapshots.view', 'web'));
+
+        $this->actingAs($user)
+            ->get('/snapshots')
+            ->assertOk()
+            ->assertSee('Snapshots')
+            ->assertSee('data-snapshot-page', false)
+            ->assertSee('Pega con Ctrl+V')
+            ->assertSee('Descargar ZIP');
     }
 
     public function test_navigation_manager_requires_permissions_and_lists_menu(): void
@@ -64,7 +103,9 @@ class UserRoleManagementTest extends TestCase
             ->get('/navigation')
             ->assertOk()
             ->assertSee('Administración')
-            ->assertSee('Nuevo elemento');
+            ->assertSee('Nuevo grupo')
+            ->assertSee('Nuevo módulo')
+            ->assertDontSee('navigation-order', false);
     }
 
     public function test_sidebar_renders_only_active_items_allowed_by_permissions(): void
@@ -101,7 +142,6 @@ class UserRoleManagementTest extends TestCase
             ->set('icon', 'layout')
             ->set('routeName', 'home')
             ->set('permissionName', 'dashboard.view')
-            ->set('sortOrder', 5)
             ->call('saveItem')
             ->assertHasNoErrors();
 
@@ -109,9 +149,93 @@ class UserRoleManagementTest extends TestCase
             'parent_id' => $parent->id,
             'label' => 'Resumen',
             'permission_name' => 'dashboard.view',
-            'sort_order' => 5,
+            'sort_order' => 10,
             'is_active' => true,
         ]);
+    }
+
+    public function test_navigation_viewer_only_sees_items_assigned_by_permission(): void
+    {
+        $this->seed(SidebarItemSeeder::class);
+        $viewer = User::factory()->create();
+        $viewer->givePermissionTo([
+            Permission::findOrCreate('navigation.view', 'web'),
+            Permission::findOrCreate('dashboard.view', 'web'),
+        ]);
+
+        Livewire::actingAs($viewer)
+            ->test(NavigationManager::class)
+            ->assertSee('Vista limitada a tus permisos')
+            ->assertSee('Inicio')
+            ->assertSee('Navegación')
+            ->assertDontSee('Usuarios')
+            ->assertDontSee('Roles')
+            ->assertDontSee('Nuevo grupo');
+    }
+
+    public function test_sidebar_permission_is_enforced_on_direct_urls(): void
+    {
+        $this->seed(SidebarItemSeeder::class);
+        $user = User::factory()->create();
+        $chat = SidebarItem::query()->where('route_name', 'chats')->firstOrFail();
+        $chat->update(['permission_name' => 'dashboard.view']);
+
+        $this->actingAs($user)->get('/chats')->assertForbidden();
+
+        $user->givePermissionTo(Permission::findOrCreate('dashboard.view', 'web'));
+
+        $this->actingAs($user)->get('/chats')->assertOk();
+    }
+
+    public function test_parent_group_permission_is_enforced_on_direct_urls(): void
+    {
+        $this->seed(SidebarItemSeeder::class);
+        $user = User::factory()->create();
+        $user->givePermissionTo(Permission::findOrCreate('preset_messages.view', 'web'));
+        $operations = SidebarItem::query()->where('label', 'Operación')->firstOrFail();
+        $operations->update(['permission_name' => 'users.view']);
+
+        $this->actingAs($user)->get('/preset-messages')->assertForbidden();
+
+        $user->givePermissionTo(Permission::findOrCreate('users.view', 'web'));
+
+        $this->actingAs($user)->get('/preset-messages')->assertOk();
+    }
+
+    public function test_navigation_manager_creates_parent_groups_and_orders_with_arrows(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $first = SidebarItem::create([
+            'type' => 'group',
+            'label' => 'Primero',
+            'sort_order' => 10,
+            'is_active' => true,
+        ]);
+        $second = SidebarItem::create([
+            'type' => 'group',
+            'label' => 'Segundo',
+            'sort_order' => 20,
+            'is_active' => true,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(NavigationManager::class)
+            ->call('createGroup')
+            ->assertSet('type', 'group')
+            ->set('label', 'Tercero')
+            ->call('saveItem')
+            ->assertHasNoErrors()
+            ->call('moveDown', $first->id)
+            ->assertSee('Orden actualizado.');
+
+        $this->assertDatabaseHas('sidebar_items', [
+            'type' => 'group',
+            'label' => 'Tercero',
+            'parent_id' => null,
+            'sort_order' => 30,
+        ]);
+        $this->assertSame(20, $first->fresh()->sort_order);
+        $this->assertSame(10, $second->fresh()->sort_order);
     }
 
     public function test_navigation_manager_can_edit_current_application_modules(): void
@@ -214,6 +338,7 @@ class UserRoleManagementTest extends TestCase
         $assignRoles = Permission::findOrCreate('users.assign_roles', 'web');
         $actor = User::factory()->create();
         $actor->givePermissionTo([$viewUsers, $createUsers, $assignRoles]);
+        session()->put('auth.password_confirmed_at', time());
 
         $editor = Role::create(['name' => 'Editor', 'guard_name' => 'web']);
         $editor->givePermissionTo($viewUsers);
@@ -285,12 +410,14 @@ class UserRoleManagementTest extends TestCase
         $this->actingAs($admin)
             ->get('/users')
             ->assertOk()
-            ->assertSee('Usuario')
+            ->assertSee('Avatar')
             ->assertSee('Nombre')
             ->assertSee('Correo')
             ->assertSee('Teléfono')
             ->assertSee('Estado')
             ->assertSee('Rol')
+            ->assertSee('Acciones')
+            ->assertDontSee("wire:click=\"sortBy('username')\"", false)
             ->assertSee('Columnas')
             ->assertSee('Invitar usuario')
             ->assertSee('Agregar usuario');
@@ -417,6 +544,7 @@ class UserRoleManagementTest extends TestCase
 
         $user = User::factory()->create();
         $user->assignRole($role);
+        session()->put('auth.password_confirmed_at', time());
 
         return $user;
     }

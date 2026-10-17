@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\ChatHistoryVisibility;
 use App\Livewire\ChatWorkspace;
-use App\Livewire\TechnicalCenter;
+use App\Livewire\IamSecurityCenter;
 use App\Models\User;
 use App\Services\ChatService;
 use App\Services\TechnicalSettings;
@@ -17,33 +17,40 @@ class TechnicalCenterTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_technical_center_requires_permission_and_saves_chat_policy_with_livewire(): void
+    public function test_technical_center_requires_permission_and_saves_iam_policy_with_livewire(): void
     {
         $user = User::factory()->create();
         $this->actingAs($user)->get('/technical-center')->assertForbidden();
 
         $user->givePermissionTo([
             Permission::findOrCreate('technical_center.view', 'web'),
-            Permission::findOrCreate('technical_center.manage', 'web'),
+            Permission::findOrCreate('technical_center.manage_iam', 'web'),
         ]);
 
         $this->actingAs($user)
             ->get('/technical-center')
             ->assertOk()
-            ->assertSee('Centro técnico')
-            ->assertSee('Historial para nuevos participantes');
+            ->assertSee('Herramientas IAM')
+            ->assertSee('Sin polling')
+            ->assertSee('IAM_IDLE_TIMEOUT_MINUTES')
+            ->assertDontSee('Historial para nuevos participantes');
+
+        session(['auth.password_confirmed_at' => time()]);
 
         Livewire::actingAs($user)
-            ->test(TechnicalCenter::class)
-            ->set('chatHistoryVisibility', ChatHistoryVisibility::SinceAdded->value)
-            ->call('saveChatSettings')
+            ->test(IamSecurityCenter::class)
+            ->set('idleTimeoutMinutes', 45)
+            ->set('absoluteTimeoutMinutes', 600)
+            ->set('sessionWarningSeconds', 180)
+            ->set('passwordMinLength', 14)
+            ->call('saveIamSettings')
             ->assertHasNoErrors()
             ->assertSet('saved', true)
             ->assertSee('Configuración guardada.');
 
         $this->assertDatabaseHas('system_settings', [
-            'key' => TechnicalSettings::CHAT_NEW_PARTICIPANT_HISTORY,
-            'value' => ChatHistoryVisibility::SinceAdded->value,
+            'key' => 'iam.idle_timeout_minutes',
+            'value' => '45',
             'updated_by' => $user->id,
         ]);
     }
