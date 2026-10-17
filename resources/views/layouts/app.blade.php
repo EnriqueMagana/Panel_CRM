@@ -45,7 +45,7 @@
     @livewireStyles
 </head>
 
-<body class="bg-background text-foreground antialiased">
+<body class="bg-background text-foreground antialiased" data-snippetdesk-app>
     <div id="global-confirm-modal" aria-hidden="true"
         class="pointer-events-none fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
         <div class="pointer-events-auto w-full max-w-md rounded-xl border border-border bg-background p-5 text-foreground shadow-2xl"
@@ -63,6 +63,13 @@
     @php
         $layoutUser = auth()->user();
         $layoutRoles = $layoutUser->getRoleNames();
+        $layoutRouteEnabled = function (string $routeName): bool {
+            $items = \App\Models\SidebarItem::query()->with('parent:id,is_active')->where('route_name', $routeName)->get();
+
+            return $items->isEmpty() || $items->contains(
+                fn ($item) => $item->is_active && ($item->parent_id === null || $item->parent?->is_active),
+            );
+        };
     @endphp
 
     <div id="app-shell" class="min-h-dvh lg:grid lg:grid-cols-[256px_minmax(0,1fr)]">
@@ -344,10 +351,28 @@
                         class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Centro técnico</span><span
                             class="text-xs text-muted-foreground">Administración</span></a>
                 @endcan
-                <a role="option" wire:navigate.hover data-search-item data-search-value="chats mensajes inbox conversación"
-                    href="{{ route('chats') }}"
-                    class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Chats</span><span
-                        class="text-xs text-muted-foreground">General</span></a>
+                @can('preset_messages.view')
+                    <a role="option" wire:navigate.hover data-search-item
+                        data-search-value="mensajes predeterminados plantillas respuestas rápidas copiar"
+                        href="{{ route('preset-messages') }}"
+                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Mensajes predeterminados</span><span
+                            class="text-xs text-muted-foreground">Productividad</span></a>
+                @endcan
+                @can('browser_extensions.view')
+                    @if ($layoutRouteEnabled('browser-extension'))
+                        <a role="option" wire:navigate.hover data-search-item
+                            data-search-value="extensión navegador chrome edge panel lateral pegar tickets"
+                            href="{{ route('browser-extension') }}"
+                            class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Extensión del navegador</span><span
+                                class="text-xs text-muted-foreground">Productividad</span></a>
+                    @endif
+                @endcan
+                @if ($layoutRouteEnabled('chats'))
+                    <a role="option" wire:navigate.hover data-search-item data-search-value="chats mensajes inbox conversación"
+                        href="{{ route('chats') }}"
+                        class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Chats</span><span
+                            class="text-xs text-muted-foreground">General</span></a>
+                @endif
                 <a role="option" wire:navigate data-search-item data-search-value="perfil nombre imagen foto cuenta"
                     href="{{ route('profile') }}#profile-details"
                     class="flex min-h-11 items-center justify-between rounded-md px-3 text-sm hover:bg-accent"><span>Perfil</span><span

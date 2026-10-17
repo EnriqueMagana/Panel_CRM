@@ -50,6 +50,22 @@
             <path d="M8 9.5h8M8 13h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
         @break
 
+        @case('messages')
+            <path d="M5 4.5h14A2.5 2.5 0 0 1 21.5 7v8A2.5 2.5 0 0 1 19 17.5H9L4.5 21v-4A2.5 2.5 0 0 1 2.5 15V7A2.5 2.5 0 0 1 5 4.5Z"
+                stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            <path d="M7.5 9h9M7.5 13h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        @break
+
+        @case('extension')
+            <path d="M8.5 4.5h7v4h4v7h-4v4h-7v-4h-4v-7h4v-4Z" stroke="currentColor" stroke-width="1.6"
+                stroke-linejoin="round" />
+        @break
+
+        @case('ticket')
+            <path d="M4.5 7.5h15A1.5 1.5 0 0 1 21 9v2a2.5 2.5 0 0 0 0 5v2a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18v-2a2.5 2.5 0 0 0 0-5V9a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            <path d="M9 7.5v12M13 11h4M13 15h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        @break
+
         @case('settings')
             <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />
             <path

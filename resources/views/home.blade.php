@@ -22,14 +22,6 @@
             </a>
         </header>
 
-        <section class="border-l-2 border-primary pl-5" aria-labelledby="workspace-heading">
-            <h2 id="workspace-heading" class="text-base font-semibold">Tu cuenta, en un solo lugar</h2>
-            <p class="mt-1 text-sm leading-6 text-muted-foreground">Desde Perfil y seguridad puedes actualizar tus datos,
-                cambiar tu contraseña y proteger el acceso con verificación en dos pasos.</p>
-            <a href="{{ route('profile') }}"
-                class="mt-3 inline-flex min-h-11 items-center text-sm font-medium underline-offset-4 hover:underline">
-                Abrir Perfil y seguridad
-            </a>
-        </section>
+        <livewire:usage-analytics />
     </div>
 @endsection

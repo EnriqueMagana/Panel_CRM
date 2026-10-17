@@ -114,6 +114,33 @@ class ExampleTest extends TestCase
         $this->assertNull($user->profile_photo_path);
     }
 
+    public function test_profile_can_save_avatar_customization_preferences(): void
+    {
+        $user = User::factory()->create();
+
+        Livewire::actingAs($user)
+            ->test(ProfileSecurity::class)
+            ->assertSee('Personalizar avatar')
+            ->set('avatarColorMode', 'custom')
+            ->set('avatarHue', 212)
+            ->set('avatarTone', 0.62)
+            ->set('avatarBackground', 'squircle')
+            ->set('avatarBackgroundColor', '#19324d')
+            ->set('avatarExpression', 'happy')
+            ->call('updateProfile')
+            ->assertHasNoErrors()
+            ->assertDispatched('profile-avatar-updated');
+
+        $this->assertSame([
+            'color_mode' => 'custom',
+            'hue' => 212,
+            'tone' => 0.62,
+            'background' => 'squircle',
+            'background_color' => '#19324d',
+            'expression' => 'happy',
+        ], $user->refresh()->avatar_preferences);
+    }
+
     public function test_choosing_an_avatar_replaces_and_removes_an_uploaded_photo(): void
     {
         Storage::fake('public');

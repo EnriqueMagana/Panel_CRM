@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snippetdesk</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header>
+    <strong>Snippetdesk</strong>
+    <button id="settings-toggle" type="button" aria-expanded="false">Configurar</button>
+  </header>
+  <form id="settings" hidden>
+    <label for="app-url">Dirección de Snippetdesk</label>
+    <div>
+      <input id="app-url" type="url" required placeholder="http://127.0.0.1:8000/preset-messages">
+      <button type="submit">Guardar</button>
+    </div>
+    <p>Usa una dirección permitida por tu organización.</p>
+  </form>
+  <iframe id="snippetdesk" title="Snippetdesk"></iframe>
+  <script src="panel.js"></script>
+</body>
+</html>

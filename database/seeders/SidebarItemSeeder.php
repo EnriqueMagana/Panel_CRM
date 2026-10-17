@@ -17,6 +17,10 @@ class SidebarItemSeeder extends Seeder
             ['key' => 'navigation', 'parent' => 'administration', 'type' => 'link', 'label' => 'Navegación', 'icon' => 'menu', 'route_name' => 'navigation', 'permission_name' => 'navigation.view', 'sort_order' => 30],
             ['key' => 'technical-center', 'parent' => 'administration', 'type' => 'link', 'label' => 'Centro técnico', 'icon' => 'settings', 'route_name' => 'technical-center', 'permission_name' => 'technical_center.view', 'sort_order' => 40],
             ['key' => 'chat', 'parent' => null, 'type' => 'link', 'label' => 'Chats', 'icon' => 'chat', 'route_name' => 'chats', 'sort_order' => 25],
+            ['key' => 'preset-messages', 'parent' => null, 'type' => 'link', 'label' => 'Mensajes predeterminados', 'icon' => 'messages', 'route_name' => 'preset-messages', 'permission_name' => 'preset_messages.view', 'sort_order' => 27],
+            ['key' => 'ticket-escalations', 'parent' => null, 'type' => 'link', 'label' => 'Escalado de tickets', 'icon' => 'ticket', 'route_name' => 'ticket-escalations', 'permission_name' => 'ticket_escalations.view', 'sort_order' => 28],
+            ['key' => 'extensions', 'parent' => null, 'type' => 'group', 'label' => 'Extensiones', 'icon' => 'extension', 'sort_order' => 29],
+            ['key' => 'browser-extension', 'parent' => 'extensions', 'type' => 'link', 'label' => 'Extensión del navegador', 'icon' => 'extension', 'route_name' => 'browser-extension', 'permission_name' => 'browser_extensions.view', 'sort_order' => 10],
             ['key' => 'account', 'parent' => null, 'type' => 'group', 'label' => 'Cuenta', 'icon' => 'user', 'sort_order' => 30],
             ['key' => 'profile-details', 'parent' => 'account', 'type' => 'link', 'label' => 'Perfil', 'icon' => 'user', 'route_name' => 'profile', 'route_fragment' => 'profile-details', 'active_route' => 'profile', 'sort_order' => 10],
             ['key' => 'password', 'parent' => 'account', 'type' => 'link', 'label' => 'Contraseña', 'icon' => 'key', 'route_name' => 'profile', 'route_fragment' => 'password-heading', 'active_route' => 'profile', 'sort_order' => 20],
@@ -28,14 +32,13 @@ class SidebarItemSeeder extends Seeder
         $ids = [];
         foreach ($items as $item) {
             $parentId = $item['parent'] ? $ids[$item['parent']] : null;
-            $record = SidebarItem::query()->updateOrCreate(
-                ['label' => $item['label'], 'parent_id' => $parentId],
-                [
-                    ...collect($item)->except(['key', 'parent'])->all(),
-                    'parent_id' => $parentId,
-                    'is_active' => true,
-                ],
-            );
+            $record = SidebarItem::query()->firstOrNew(['label' => $item['label'], 'parent_id' => $parentId]);
+            $record->fill([
+                ...collect($item)->except(['key', 'parent'])->all(),
+                'parent_id' => $parentId,
+            ]);
+            $record->is_active ??= true;
+            $record->save();
             $ids[$item['key']] = $record->id;
         }
     }

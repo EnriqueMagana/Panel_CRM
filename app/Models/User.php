@@ -5,6 +5,8 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
@@ -28,6 +30,7 @@ class User extends Authenticatable
         'phone_number',
         'password',
         'avatar_seed',
+        'avatar_preferences',
         'profile_photo_variants',
         'status',
         'theme',
@@ -57,6 +60,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'profile_photo_variants' => 'array',
+            'avatar_preferences' => 'array',
         ];
     }
 
@@ -87,6 +91,21 @@ class User extends Authenticatable
     public function getProfilePhotoUrlAttribute(): ?string
     {
         return $this->profilePhotoUrl('small');
+    }
+
+    public function presetMessagePreference(): HasOne
+    {
+        return $this->hasOne(PresetMessagePreference::class);
+    }
+
+    public function browserExtensionConnection(): HasOne
+    {
+        return $this->hasOne(BrowserExtensionConnection::class);
+    }
+
+    public function ticketEscalations(): HasMany
+    {
+        return $this->hasMany(TicketEscalation::class, 'created_by');
     }
 
     public function profilePhotoUrl(string $size = 'small'): ?string

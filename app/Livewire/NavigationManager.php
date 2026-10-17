@@ -3,7 +3,6 @@
 namespace App\Livewire;
 
 use App\Models\SidebarItem;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
 
@@ -81,7 +80,7 @@ class NavigationManager extends Component
             'type' => ['required', Rule::in(['group', 'link', 'action'])],
             'label' => ['required', 'string', 'max:100'],
             'icon' => ['nullable', Rule::in(array_keys(config('sidebar.icons')))],
-            'routeName' => [$isGroup || $isAction ? 'nullable' : 'required', 'string', Rule::in(array_keys(Route::getRoutes()->getRoutesByName()))],
+            'routeName' => [$isGroup || $isAction ? 'nullable' : 'required', 'string', Rule::in(array_keys(config('sidebar.routes')))],
             'routeFragment' => ['nullable', 'string', 'max:100'],
             'actionKey' => [$isAction ? 'required' : 'nullable', Rule::in(array_keys(config('sidebar.actions')))],
             'permissionName' => ['nullable', Rule::in($permissionNames)],
@@ -136,6 +135,19 @@ class NavigationManager extends Component
         session()->flash('navigation-status', 'Elemento eliminado.');
     }
 
+    public function toggleActive(int $itemId): void
+    {
+        $this->authorize('navigation.manage');
+
+        $item = SidebarItem::findOrFail($itemId);
+        $item->update(['is_active' => ! $item->is_active]);
+
+        session()->flash(
+            'navigation-status',
+            $item->is_active ? 'Elemento activado.' : 'Elemento desactivado.',
+        );
+    }
+
     public function cancelForm(): void
     {
         $this->closeForm();
@@ -146,6 +158,7 @@ class NavigationManager extends Component
         return view('livewire.navigation-manager', [
             'items' => SidebarItem::query()->with('children')->whereNull('parent_id')->ordered()->get(),
             'groups' => SidebarItem::query()->where('type', 'group')->ordered()->get(),
+            'routes' => config('sidebar.routes'),
             'permissions' => collect(config('access.modules'))
                 ->flatMap(fn (array $module, string $key) => collect($module['permissions'])
                     ->keys()

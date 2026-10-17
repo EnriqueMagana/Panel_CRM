@@ -30,6 +30,18 @@ class ProfileSecurity extends Component
 
     public string $selectedAvatarSeed = '';
 
+    public string $avatarColorMode = 'auto';
+
+    public int $avatarHue = 35;
+
+    public float $avatarTone = 0.55;
+
+    public string $avatarBackground = 'circle';
+
+    public string $avatarBackgroundColor = '#f6c76b';
+
+    public string $avatarExpression = 'idle';
+
     public string $currentPassword = '';
 
     public string $newPassword = '';
@@ -47,6 +59,7 @@ class ProfileSecurity extends Component
         $user = Auth::user();
         $this->name = $user->name;
         $this->profileMode = $user->profile_photo_path ? 'photo' : 'avatar';
+        $this->loadAvatarPreferences($user);
         $this->makeAvatarChoices($user->avatar_seed);
     }
 
@@ -90,9 +103,18 @@ class ProfileSecurity extends Component
                 $this->profileMode === 'avatar' ? 'required' : 'nullable',
                 'uuid',
             ],
+            'avatarColorMode' => ['required', Rule::in(['auto', 'custom'])],
+            'avatarHue' => ['required', 'integer', 'between:0,359'],
+            'avatarTone' => ['required', 'numeric', 'between:0.15,0.85'],
+            'avatarBackground' => ['required', Rule::in(['circle', 'square', 'squircle', 'transparent'])],
+            'avatarBackgroundColor' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'avatarExpression' => ['required', Rule::in($this->avatarExpressions())],
         ]);
 
-        $updates = ['name' => $validated['name']];
+        $updates = [
+            'name' => $validated['name'],
+            'avatar_preferences' => $this->avatarPreferences(),
+        ];
         $previousPhoto = $user->profile_photo_path;
         $previousVariants = $user->profile_photo_variants;
 
@@ -238,6 +260,34 @@ class ProfileSecurity extends Component
         $this->selectedAvatarSeed = $this->avatarChoices[0];
     }
 
+    public function avatarPreferences(): array
+    {
+        return [
+            'color_mode' => $this->avatarColorMode,
+            'hue' => $this->avatarHue,
+            'tone' => round($this->avatarTone, 2),
+            'background' => $this->avatarBackground,
+            'background_color' => strtolower($this->avatarBackgroundColor),
+            'expression' => $this->avatarExpression,
+        ];
+    }
+
+    private function loadAvatarPreferences(User $user): void
+    {
+        $preferences = $user->avatar_preferences ?? [];
+        $this->avatarColorMode = $preferences['color_mode'] ?? 'auto';
+        $this->avatarHue = (int) ($preferences['hue'] ?? 35);
+        $this->avatarTone = (float) ($preferences['tone'] ?? 0.55);
+        $this->avatarBackground = $preferences['background'] ?? 'circle';
+        $this->avatarBackgroundColor = $preferences['background_color'] ?? '#f6c76b';
+        $this->avatarExpression = $preferences['expression'] ?? 'idle';
+    }
+
+    private function avatarExpressions(): array
+    {
+        return ['idle', 'happy', 'wink', 'surprised', 'thinking', 'sleepy', 'love', 'shy', 'smug', 'unsure'];
+    }
+
     private function dispatchProfileAvatarUpdated(User $user): void
     {
         $this->dispatch(
@@ -245,6 +295,7 @@ class ProfileSecurity extends Component
             userId: $user->id,
             profilePhotoUrl: $user->profile_photo_url,
             avatarSeed: $user->avatar_seed ?: hash('sha256', mb_strtolower(trim($user->email))),
+            avatarPreferences: $user->avatar_preferences ?? [],
         );
     }
 }

@@ -1,4 +1,7 @@
-@php($user = auth()->user())
+@php
+    $user = auth()->user();
+    $avatarDraftPreferences = $this->avatarPreferences();
+@endphp
 
 <div class="space-y-8">
     @if (session('profile-status'))
@@ -76,7 +79,8 @@
                             class="size-full object-cover">
                     @else
                         <x-user-avatar :user="$user" size="size-full" :pixels="96" :seed="$profileMode === 'avatar' ? $selectedAvatarSeed : null"
-                            animate="always" alt="Imagen de perfil actual" class="rounded-full" />
+                            :preferences="$avatarDraftPreferences" alt="Imagen de perfil actual" class="rounded-full"
+                            data-avatar-customizer-preview data-avatar-customizer-primary />
                     @endif
                 </div>
                 <div class="grid gap-2">
@@ -127,7 +131,16 @@
                 <fieldset class="grid gap-3">
                     <div class="flex flex-wrap items-center justify-between gap-3">
                         <legend class="text-sm font-medium">Elige un avatar</legend>
-                        <button type="button" wire:click="generateAvatarChoices"
+                        <div class="flex flex-wrap gap-2">
+                        <button type="button" data-avatar-customizer-open aria-haspopup="dialog"
+                            class="inline-flex min-h-11 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <svg viewBox="0 0 24 24" fill="none" class="size-4" aria-hidden="true">
+                                <path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                                <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6" />
+                            </svg>
+                            Personalizar
+                        </button>
+                        <button type="button" wire:click="generateAvatarChoices" wire:loading.attr="disabled"
                             class="inline-flex min-h-10 items-center gap-2 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent">
                             <svg viewBox="0 0 24 24" fill="none" class="size-4" aria-hidden="true">
                                 <path
@@ -137,17 +150,19 @@
                             </svg>
                             Generar nuevos
                         </button>
+                        </div>
                     </div>
-                    <div class="grid grid-cols-4 gap-2 sm:grid-cols-8 sm:gap-3">
+                    <div wire:replace class="grid grid-cols-4 gap-2 sm:grid-cols-8 sm:gap-3">
                         @foreach ($avatarChoices as $seed)
                             <label wire:key="profile-avatar-{{ $seed }}" class="group cursor-pointer">
-                                <input type="radio" wire:model.live="selectedAvatarSeed"
+                                <input type="radio" wire:model="selectedAvatarSeed" data-avatar-seed-choice
                                     value="{{ $seed }}" class="peer sr-only"
                                     aria-label="Avatar {{ $loop->iteration }}">
                                 <span
                                     class="flex min-h-20 flex-col items-center justify-center gap-1 rounded-md border border-border p-2 text-xs text-muted-foreground transition-colors group-hover:bg-accent peer-checked:border-primary peer-checked:bg-accent peer-focus-visible:outline-2 peer-focus-visible:outline-ring sm:min-h-24">
-                                    <x-user-avatar :user="$user" :seed="$seed" size="size-14" :pixels="56"
-                                        animate="hover" alt="" class="rounded-full" />
+                                    <x-user-avatar :user="$user" :seed="$seed" :preferences="$avatarDraftPreferences"
+                                        size="size-14" :pixels="56" alt="" class="rounded-full"
+                                        data-avatar-customizer-preview />
                                     <span>{{ $loop->iteration }}</span>
                                 </span>
                             </label>
@@ -156,6 +171,72 @@
                     @error('selectedAvatarSeed')
                         <p class="text-sm text-destructive">{{ $message }}</p>
                     @enderror
+
+                    <dialog data-avatar-customizer-dialog aria-labelledby="avatar-customizer-title"
+                        class="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-2xl overflow-hidden rounded-2xl border border-border bg-card p-0 text-card-foreground shadow-2xl backdrop:bg-black/60">
+                        <div data-avatar-customizer class="grid max-h-[calc(100dvh-2rem)] overflow-y-auto md:grid-cols-[220px_minmax(0,1fr)]">
+                            <aside class="grid content-center justify-items-center gap-4 border-b border-border bg-muted/40 p-6 md:border-b-0 md:border-r">
+                                <div class="grid size-36 place-items-center overflow-hidden rounded-full border border-border bg-background shadow-sm">
+                                    <x-user-avatar :user="$user" :seed="$selectedAvatarSeed" :preferences="$avatarDraftPreferences"
+                                        size="size-full" :pixels="144" alt="Vista previa del avatar personalizado"
+                                        data-avatar-customizer-preview data-avatar-customizer-primary />
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-sm font-semibold">Vista previa en tiempo real</p>
+                                    <p class="mt-1 text-xs leading-5 text-muted-foreground">Los cambios se guardan al pulsar “Guardar perfil”.</p>
+                                </div>
+                            </aside>
+
+                            <div class="grid gap-5 p-5 sm:p-6">
+                                <div class="flex items-start justify-between gap-4">
+                                    <div>
+                                        <h3 id="avatar-customizer-title" class="text-lg font-semibold">Personalizar avatar</h3>
+                                        <p class="mt-1 text-sm text-muted-foreground">Ajusta su color, expresión y fondo.</p>
+                                    </div>
+                                    <button type="button" data-avatar-customizer-close aria-label="Cerrar personalización"
+                                        class="grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                        <svg viewBox="0 0 24 24" fill="none" class="size-5" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+                                    </button>
+                                </div>
+
+                                <fieldset class="grid gap-2">
+                                    <legend class="text-sm font-medium">Color del personaje</legend>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="cursor-pointer"><input type="radio" wire:model="avatarColorMode" value="auto" data-avatar-field="color_mode" class="peer sr-only"><span class="grid min-h-11 place-items-center rounded-md border border-input px-3 text-sm peer-checked:border-primary peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-ring">Automático</span></label>
+                                        <label class="cursor-pointer"><input type="radio" wire:model="avatarColorMode" value="custom" data-avatar-field="color_mode" class="peer sr-only"><span class="grid min-h-11 place-items-center rounded-md border border-input px-3 text-sm peer-checked:border-primary peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-ring">Personalizado</span></label>
+                                    </div>
+                                    <label for="avatar-hue" class="mt-2 flex items-center justify-between text-sm"><span>Matiz</span><output data-avatar-hue-output>{{ $avatarHue }}°</output></label>
+                                    <input id="avatar-hue" type="range" min="0" max="359" step="1" wire:model="avatarHue" data-avatar-field="hue" class="w-full accent-primary">
+                                    <label for="avatar-tone" class="flex items-center justify-between text-sm"><span>Luminosidad</span><output data-avatar-tone-output>{{ round($avatarTone * 100) }}%</output></label>
+                                    <input id="avatar-tone" type="range" min="0.15" max="0.85" step="0.01" wire:model="avatarTone" data-avatar-field="tone" class="w-full accent-primary">
+                                </fieldset>
+
+                                <div class="grid gap-2">
+                                    <label for="avatar-expression" class="text-sm font-medium">Expresión</label>
+                                    <select id="avatar-expression" wire:model="avatarExpression" data-avatar-field="expression" class="h-11 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                        <option value="idle">Neutral</option><option value="happy">Feliz</option><option value="wink">Guiño</option><option value="surprised">Sorprendido</option><option value="thinking">Pensativo</option><option value="sleepy">Soñoliento</option><option value="love">Enamorado</option><option value="shy">Tímido</option><option value="smug">Seguro</option><option value="unsure">Dudoso</option>
+                                    </select>
+                                </div>
+
+                                <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                                    <div class="grid gap-2">
+                                        <label for="avatar-background" class="text-sm font-medium">Forma del fondo</label>
+                                        <select id="avatar-background" wire:model="avatarBackground" data-avatar-field="background" class="h-11 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                            <option value="circle">Círculo</option><option value="squircle">Suave</option><option value="square">Cuadrado</option><option value="transparent">Transparente</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid gap-2">
+                                        <label for="avatar-background-color" class="text-sm font-medium">Color de fondo</label>
+                                        <input id="avatar-background-color" type="color" wire:model="avatarBackgroundColor" data-avatar-field="background_color" class="h-11 w-full min-w-20 cursor-pointer rounded-md border border-input bg-background p-1">
+                                    </div>
+                                </div>
+
+                                <div class="flex justify-end border-t border-border pt-4">
+                                    <button type="button" data-avatar-customizer-close class="min-h-11 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Aplicar cambios</button>
+                                </div>
+                            </div>
+                        </div>
+                    </dialog>
                 </fieldset>
             @endif
 

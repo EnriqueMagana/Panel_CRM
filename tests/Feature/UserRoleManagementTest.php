@@ -79,8 +79,7 @@ class UserRoleManagementTest extends TestCase
         $this->assertStringNotContainsString('href="/users"', $response->getContent());
 
         SidebarItem::where('label', 'Inicio')->update(['is_active' => false]);
-        $response = $this->get('/home')->assertOk();
-        $this->assertStringNotContainsString('href="/home"', $response->getContent());
+        $this->get('/home')->assertForbidden();
     }
 
     public function test_navigation_manager_creates_child_items_with_permissions(): void
@@ -113,6 +112,52 @@ class UserRoleManagementTest extends TestCase
             'sort_order' => 5,
             'is_active' => true,
         ]);
+    }
+
+    public function test_navigation_manager_can_edit_current_application_modules(): void
+    {
+        $this->seed(SidebarItemSeeder::class);
+        $admin = $this->makeSuperAdmin();
+        $messages = SidebarItem::query()->where('route_name', 'preset-messages')->firstOrFail();
+
+        Livewire::actingAs($admin)
+            ->test(NavigationManager::class)
+            ->call('editItem', $messages->id)
+            ->assertSet('formOpen', true)
+            ->assertSee('Mensajes predeterminados (preset-messages)')
+            ->assertSet('routeName', 'preset-messages')
+            ->assertSet('icon', 'messages')
+            ->set('label', 'Respuestas predeterminadas')
+            ->set('isActive', false)
+            ->call('saveItem')
+            ->assertHasNoErrors()
+            ->assertSet('formOpen', false);
+
+        $this->assertDatabaseHas('sidebar_items', [
+            'id' => $messages->id,
+            'label' => 'Respuestas predeterminadas',
+            'route_name' => 'preset-messages',
+            'icon' => 'messages',
+            'is_active' => false,
+        ]);
+    }
+
+    public function test_navigation_manager_can_toggle_a_module_directly(): void
+    {
+        $this->seed(SidebarItemSeeder::class);
+        $admin = $this->makeSuperAdmin();
+        $chat = SidebarItem::query()->where('route_name', 'chats')->firstOrFail();
+
+        Livewire::actingAs($admin)
+            ->test(NavigationManager::class)
+            ->assertSee('Desactivar Chats')
+            ->call('toggleActive', $chat->id)
+            ->assertSee('Elemento desactivado.')
+            ->assertSee('Activar Chats')
+            ->call('toggleActive', $chat->id)
+            ->assertSee('Elemento activado.');
+
+        $this->assertTrue($chat->fresh()->is_active);
     }
 
     public function test_new_users_without_profile_photos_receive_random_avatar_seeds(): void

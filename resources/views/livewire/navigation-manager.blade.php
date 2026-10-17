@@ -82,15 +82,8 @@
                         <select id="navigation-route" wire:model="routeName"
                             class="h-11 rounded-md border border-input bg-background px-3 text-sm">
                             <option value="">Selecciona una ruta</option>
-                            @foreach (\Illuminate\Support\Facades\Route::getRoutes()->getRoutesByName() as $routeName => $route)
-                                @if (str_starts_with($routeName, 'home') ||
-                                        str_starts_with($routeName, 'profile') ||
-                                        str_starts_with($routeName, 'users') ||
-                                        str_starts_with($routeName, 'roles') ||
-                                        str_starts_with($routeName, 'navigation') ||
-                                        str_starts_with($routeName, 'technical-center'))
-                                    <option value="{{ $routeName }}">{{ $routeName }}</option>
-                                @endif
+                            @foreach ($routes as $routeName => $routeLabel)
+                                <option value="{{ $routeName }}">{{ $routeLabel }} ({{ $routeName }})</option>
                             @endforeach
                         </select>
                         @error('routeName')
@@ -176,6 +169,12 @@
                         'border-border text-muted-foreground' => !$item->is_active,
                     ])>{{ $item->is_active ? 'Activo' : 'Inactivo' }}</span>
                     @can('navigation.manage')
+                        <button type="button" wire:click="toggleActive({{ $item->id }})"
+                            wire:loading.attr="disabled" wire:target="toggleActive"
+                            aria-label="{{ $item->is_active ? 'Desactivar' : 'Activar' }} {{ $item->label }}"
+                            class="min-h-10 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:opacity-60">
+                            {{ $item->is_active ? 'Desactivar' : 'Activar' }}
+                        </button>
                         <button type="button" wire:click="editItem({{ $item->id }})"
                             class="min-h-10 rounded-md px-3 text-sm hover:bg-accent">Editar</button>
                         <button type="button" wire:click="deleteItem({{ $item->id }})"
@@ -196,6 +195,12 @@
                             'border-border text-muted-foreground' => !$child->is_active,
                         ])>{{ $child->is_active ? 'Activo' : 'Inactivo' }}</span>
                         @can('navigation.manage')
+                            <button type="button" wire:click="toggleActive({{ $child->id }})"
+                                wire:loading.attr="disabled" wire:target="toggleActive"
+                                aria-label="{{ $child->is_active ? 'Desactivar' : 'Activar' }} {{ $child->label }}"
+                                class="min-h-10 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:opacity-60">
+                                {{ $child->is_active ? 'Desactivar' : 'Activar' }}
+                            </button>
                             <button type="button" wire:click="editItem({{ $child->id }})"
                                 class="min-h-10 rounded-md px-3 text-sm hover:bg-accent">Editar</button>
                             <button type="button" wire:click="deleteItem({{ $child->id }})"

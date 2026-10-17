@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureSidebarModuleIsActive;
 use App\Http\Middleware\EnsureUserAccountIsActive;
 use App\Http\Middleware\PreventBackHistory;
 use Illuminate\Foundation\Application;
@@ -14,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [PreventBackHistory::class, EnsureUserAccountIsActive::class]);
+        $middleware->alias(['sidebar.active' => EnsureSidebarModuleIsActive::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

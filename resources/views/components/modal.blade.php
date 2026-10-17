@@ -1,4 +1,4 @@
-@props(['id', 'title', 'description' => null, 'closeAction' => 'cancelForm', 'size' => 'lg'])
+@props(['id', 'title', 'description' => null, 'closeAction' => 'cancelForm', 'size' => 'lg', 'dismissible' => true])
 
 @php
     $sizeClass = match ($size) {
@@ -7,11 +7,12 @@
         'lg' => 'max-w-lg',
         'xl' => 'max-w-3xl',
         '2xl' => 'max-w-4xl',
+        '3xl' => 'max-w-6xl',
         default => 'max-w-xl',
     };
 @endphp
 
-<dialog data-livewire-modal aria-labelledby="{{ $id }}"
+<dialog data-livewire-modal data-modal-dismissible="{{ $dismissible ? 'true' : 'false' }}" wire:ignore.self aria-labelledby="{{ $id }}"
     @if ($description) aria-describedby="{{ $id }}-description" @endif
     class="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] {{ $sizeClass }} overflow-y-auto rounded-md border border-border bg-background p-0 text-foreground shadow-2xl backdrop:bg-black/50">
     <header

@@ -41,5 +41,30 @@ return [
                 'manage' => 'Administrar',
             ],
         ],
+        'preset_messages' => [
+            'label' => 'Mensajes predeterminados',
+            'permissions' => [
+                'view' => 'Ver',
+                'create' => 'Crear',
+                'update' => 'Editar',
+                'delete' => 'Eliminar',
+            ],
+        ],
+        'ticket_escalations' => [
+            'label' => 'Escalado de tickets',
+            'permissions' => [
+                'view' => 'Ver',
+                'create' => 'Crear',
+                'update' => 'Editar propios',
+                'delete' => 'Eliminar propios',
+            ],
+        ],
+        'browser_extensions' => [
+            'label' => 'Extensión del navegador',
+            'permissions' => [
+                'view' => 'Ver',
+                'manage' => 'Configurar',
+            ],
+        ],
     ],
 ];

@@ -24,6 +24,8 @@ class DatabaseSeeder extends Seeder
 
         $this->call(AccessControlSeeder::class);
         $this->call(SidebarItemSeeder::class);
+        $this->call(PresetMessageSeeder::class);
+        $this->call(BrowserExtensionSeeder::class);
         $this->call(ChatSeeder::class);
 
         if (app()->isLocal()) {
