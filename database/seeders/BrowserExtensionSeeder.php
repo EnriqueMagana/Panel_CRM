@@ -24,11 +24,13 @@ class BrowserExtensionSeeder extends Seeder
         $extension = BrowserExtension::query()->firstOrNew(['slug' => 'snippetdesk-browser']);
         $extension->fill([
             'name' => 'Snippetdesk para navegador',
-            'version' => '1.2.0',
-            'description' => 'Selecciona visualmente cualquier campo compatible de una página web y pega mensajes desde Snippetdesk aunque cambies de pestaña.',
+            'version' => '1.3.0',
+            'description' => 'Configura un campo una sola vez y pega mensajes en la última pestaña compatible, incluso al gestionar varios tickets simultáneamente.',
             'features' => [
                 'Panel lateral sin cambiar de pestaña',
                 'Selector visual global para inputs, textareas y editores',
+                'Seguimiento de la última pestaña de ticket visitada',
+                'Reutilización automática del selector entre tickets del mismo sistema',
                 'Destino persistente aunque el campo pierda el foco',
                 'Verificación y resaltado del campo configurado',
                 'Detección automática de conexión con Snippetdesk',

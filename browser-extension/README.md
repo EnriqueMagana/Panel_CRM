@@ -12,6 +12,10 @@ La extensión guardará el campo y la pestaña elegidos. Después puedes abrir S
 
 Snippetdesk se abre en una pestaña porque algunos navegadores bloquean sesiones autenticadas dentro de paneles incrustados. El selector puede utilizarse sobre cualquier página web normal, incluido un chat, CRM o sistema de tickets.
 
-Usa **Verificar** para localizar y resaltar el destino. Si el sistema de tickets cambia su interfaz o abres otro ticket en una pestaña distinta, usa **Seleccionar campo** nuevamente.
+Usa **Verificar** para localizar y resaltar el destino. Sólo necesitas usar **Seleccionar campo** nuevamente si el sistema cambia su interfaz o el campo deja de existir.
+
+Cuando varias pestañas comparten el mismo dominio y patrón de ruta —por ejemplo `/tickets/402711` y `/tickets/402689`— no necesitas configurar cada una. La extensión conserva el selector y dirige el pegado hacia la última pestaña compatible que visitaste. El panel muestra el folio detectado como destino actual.
+
+Si el campo existe pero la aplicación lo mantiene `disabled`, Snippetdesk no elimina esa protección: te indicará que debes activar el chat o esperar a que la página permita responder.
 
 La selección funciona con `input`, `textarea`, elementos `contenteditable` y editores con `role="textbox"`, incluso cuando están dentro de marcos accesibles para la extensión.

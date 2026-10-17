@@ -23,7 +23,7 @@ const renderTarget = (target) => {
   verifyTargetButton.hidden = !configured;
   forgetTargetButton.hidden = !configured;
   targetDescription.textContent = configured
-    ? `${target.label} · ${target.tabTitle}`
+    ? `${target.ticketReference ? `Ticket ${target.ticketReference} · ` : ''}${target.label} · ${target.tabTitle}`
     : 'Selecciona el input o editor donde deben insertarse los mensajes.';
 };
 
@@ -82,7 +82,9 @@ forgetTargetButton.addEventListener('click', async () => {
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type !== 'snippetdesk-target-updated') return;
   renderTarget(message.target);
-  targetStatus.textContent = 'Campo guardado. Ya puedes usar “Pegar en navegador”.';
+  targetStatus.textContent = message.reason === 'selected'
+    ? 'Campo guardado. Ya puedes usar “Pegar en navegador”.'
+    : `Destino actualizado${message.target?.ticketReference ? ` al ticket ${message.target.ticketReference}` : ''}.`;
 });
 
 loadUrl();

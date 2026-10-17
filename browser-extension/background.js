@@ -10,6 +10,34 @@ const getActiveTab = async () => {
 
 const isSupportedPage = (url = '') => /^(https?|file):\/\//i.test(url);
 
+const normalizedPath = (url = '') => {
+  try {
+    return new URL(url).pathname
+      .replace(/\/[0-9]+(?=\/|$)/g, '/:id')
+      .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}(?=\/|$)/gi, '/:id');
+  } catch (_error) {
+    return '';
+  }
+};
+
+const ticketReference = (url = '') => {
+  try {
+    return new URL(url).pathname.match(/\/tickets\/([^/]+)/i)?.[1] || null;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const tabMatchesTarget = (tab, target) => {
+  if (!tab?.id || !isSupportedPage(tab.url) || !target?.topOrigin) return false;
+  try {
+    return new URL(tab.url).origin === target.topOrigin
+      && (!target.pathTemplate || normalizedPath(tab.url) === target.pathTemplate);
+  } catch (_error) {
+    return false;
+  }
+};
+
 const sendTabMessage = (tabId, message) => new Promise((resolve, reject) => {
   chrome.tabs.sendMessage(tabId, message, (response) => {
     const error = chrome.runtime.lastError;
@@ -56,9 +84,11 @@ const saveTarget = async (target, sender) => {
 
   const record = {
     tabId: sender.tab.id,
-    tabTitle: sender.tab.title || 'Sistema de tickets',
+    tabTitle: sender.tab.title || 'Página web',
     topUrl: sender.tab.url,
     topOrigin: new URL(sender.tab.url).origin,
+    pathTemplate: normalizedPath(sender.tab.url),
+    ticketReference: ticketReference(sender.tab.url),
     frameUrl: sender.url || sender.tab.url,
     frameOrigin: new URL(sender.url || sender.tab.url).origin,
     selector: target.selector,
@@ -68,12 +98,28 @@ const saveTarget = async (target, sender) => {
   };
 
   await chrome.storage.local.set({ [TARGET_STORAGE_KEY]: record });
-  chrome.runtime.sendMessage({ type: 'snippetdesk-target-updated', target: record }).catch(() => {});
+  chrome.runtime.sendMessage({ type: 'snippetdesk-target-updated', target: record, reason: 'selected' }).catch(() => {});
   return { success: true, target: record };
 };
 
+const rememberMatchingTab = async (tab, reason = 'activated') => {
+  const target = await readTarget();
+  if (!tabMatchesTarget(tab, target)) return;
+
+  const updatedTarget = {
+    ...target,
+    tabId: tab.id,
+    tabTitle: tab.title || target.tabTitle || 'Página web',
+    topUrl: tab.url,
+    ticketReference: ticketReference(tab.url),
+    lastActivatedAt: new Date().toISOString(),
+  };
+  await chrome.storage.local.set({ [TARGET_STORAGE_KEY]: updatedTarget });
+  chrome.runtime.sendMessage({ type: 'snippetdesk-target-updated', target: updatedTarget, reason }).catch(() => {});
+};
+
 const insertTextIntoTarget = (selector, frameOrigin, text, allowActiveFallback) => {
-  if (frameOrigin && location.origin !== frameOrigin) return { success: false };
+  if (frameOrigin && location.origin !== frameOrigin) return { success: false, reason: 'wrong-frame' };
 
   const isEditable = (element) => element instanceof HTMLTextAreaElement
     || (element instanceof HTMLInputElement && !['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'].includes(element.type))
@@ -85,7 +131,8 @@ const insertTextIntoTarget = (selector, frameOrigin, text, allowActiveFallback) 
     try { element = document.querySelector(selector); } catch (_error) { element = null; }
   }
   if (!isEditable(element) && allowActiveFallback && isEditable(document.activeElement)) element = document.activeElement;
-  if (!isEditable(element) || element.disabled || element.readOnly) return { success: false };
+  if (!isEditable(element)) return { success: false, reason: 'not-found' };
+  if (element.disabled || element.readOnly) return { success: false, reason: 'disabled' };
 
   element.focus({ preventScroll: false });
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
@@ -119,10 +166,17 @@ const resolveTargetTab = async (target) => {
   if (target?.tabId) {
     try {
       const tab = await chrome.tabs.get(target.tabId);
-      if (tab?.id && new URL(tab.url).origin === target.topOrigin) return tab;
+      if (tabMatchesTarget(tab, target)) return tab;
     } catch (_error) {
-      // The configured tab was closed; the active tab fallback is handled below.
+      // The configured tab was closed; another matching tab is resolved below.
     }
+  }
+
+  if (target) {
+    const matchingTabs = (await chrome.tabs.query({}))
+      .filter((tab) => tabMatchesTarget(tab, target))
+      .sort((left, right) => (right.lastAccessed || 0) - (left.lastAccessed || 0));
+    if (matchingTabs[0]) return matchingTabs[0];
   }
   return getActiveTab();
 };
@@ -134,21 +188,28 @@ const pasteMessage = async (text) => {
     return { success: false, error: 'Abre la página que contiene el campo y selecciónalo desde el panel de la extensión.' };
   }
 
-  const sameConfiguredSite = target && new URL(tab.url).origin === target.topOrigin;
+  const sameConfiguredSite = target && tabMatchesTarget(tab, target);
   const results = await chrome.scripting.executeScript({
     target: { tabId: tab.id, allFrames: true },
     func: insertTextIntoTarget,
     args: [sameConfiguredSite ? target.selector : null, sameConfiguredSite ? target.frameOrigin : null, text, !target],
   });
 
-  return results.some(({ result }) => result?.success)
-    ? { success: true, targetLabel: target?.label || 'campo activo' }
-    : {
-        success: false,
-        error: target
-          ? `No encontramos “${target.label}”. Vuelve a seleccionar el campo en la página correspondiente.`
-          : 'Selecciona primero un campo de texto o configura un campo destino desde el panel de la extensión.',
-      };
+  if (results.some(({ result }) => result?.success)) {
+    return { success: true, targetLabel: target?.label || 'campo activo' };
+  }
+  if (results.some(({ result }) => result?.reason === 'disabled')) {
+    return {
+      success: false,
+      error: `El campo “${target?.label || 'seleccionado'}” existe, pero la página lo mantiene deshabilitado. Activa el chat o espera a que permita responder.`,
+    };
+  }
+  return {
+    success: false,
+    error: target
+      ? `No encontramos “${target.label}”. Vuelve a seleccionar el campo en la página correspondiente.`
+      : 'Selecciona primero un campo de texto o configura un campo destino desde el panel de la extensión.',
+  };
 };
 
 const highlightTarget = (selector, frameOrigin) => {
@@ -172,7 +233,7 @@ const verifyTarget = async () => {
   const target = await readTarget();
   if (!target) return { success: false, error: 'Todavía no has seleccionado un campo.' };
   const tab = await resolveTargetTab(target);
-  if (!tab?.id || new URL(tab.url).origin !== target.topOrigin) {
+  if (!tabMatchesTarget(tab, target)) {
     return { success: false, error: 'La pestaña configurada ya no está disponible. Selecciona nuevamente el campo.' };
   }
   const results = await chrome.scripting.executeScript({
@@ -184,6 +245,19 @@ const verifyTarget = async () => {
     ? { success: true }
     : { success: false, error: 'El campo cambió o ya no existe. Selecciónalo nuevamente.' };
 };
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    await rememberMatchingTab(await chrome.tabs.get(tabId));
+  } catch (_error) {
+    // Tabs can disappear between activation and lookup.
+  }
+});
+
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (!tab.active || (!changeInfo.url && !changeInfo.title && changeInfo.status !== 'complete')) return;
+  rememberMatchingTab(tab, 'updated').catch(() => {});
+});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   let operation;
